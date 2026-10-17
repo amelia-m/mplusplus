@@ -7,8 +7,8 @@ import type { DgmFile, EstimateRow, ModelStmt, ModelTerm } from '../parser/dgm.j
  * `WITH` statements.
  *
  * Estimate rows from the DGM table that name two variables are matched to
- * edges by endpoints (see `attachEstimates`; single-variable variance rows
- * are skipped). A row with no matching edge synthesizes one: a code-2
+ * edges by endpoints, preferring an edge of the row's own type (see
+ * `matchEdgeForRow`; single-variable variance rows are skipped). A row with no matching edge synthesizes one: a code-2
  * (covariance) row becomes an undirected `COVAR` edge, and any other row
  * becomes an `ON` edge from the row's `from` to its `to`. Only codes 1
  * (unstandardized) and 11 (STDYX) attach an estimate and SE to the edge;
@@ -178,56 +178,74 @@ function walkStatement(stmt: ModelStmt, upsert: EdgeUpsert): void {
 
 /**
  * Estimate codes for directed parameters (loadings and regressions): the
- * codes whose last digit is 1, i.e. 1 (unstandardized), 11 (STDYX) and 31.
- * Code 91 also ends in 1 but is a constraint label that can name any
- * parameter, covariances included, so it is not treated as directed.
+ * codes whose last digit is 1, i.e. 1 (unstandardized), 11 (STDYX),
+ * 21 (STDY) and 31 (STD). Code 91 also ends in 1 but is a constraint label
+ * that can name any parameter, covariances included, so it is not treated
+ * as directed.
  */
-const DIRECTED_CODES: ReadonlySet<number> = new Set([1, 11, 31]);
+const DIRECTED_CODES: ReadonlySet<number> = new Set([1, 11, 21, 31]);
+
+/** Estimate codes for covariances: last digit 2, in each estimate type. */
+const COVARIANCE_CODES: ReadonlySet<number> = new Set([2, 12, 22, 32]);
+
+const DIRECTED_KINDS: ReadonlySet<EdgeKind> = new Set<EdgeKind>(['BY', 'ON']);
+
+/**
+ * Find the existing edge an estimate row with `code` between `from` and
+ * `to` describes, or `null` if none does.
+ *
+ * BY edges go latent->indicator and ON edges predictor->dependent, so the
+ * table's `from`/`to` already match both. A row first looks for an edge of
+ * its own type: a directed row (loading or regression) for a BY/ON edge with
+ * exactly its endpoints, a covariance row for a WITH/COVAR edge in either
+ * order. Only then does it fall back to any edge with exactly its endpoints
+ * and, for a non-directed row, a symmetric edge in the reversed order. A
+ * directed row never matches a reversed covariance: it has a direction of
+ * its own and must not be absorbed by a covariance between the same pair.
+ */
+export function matchEdgeForRow(
+  code: number,
+  from: string,
+  to: string,
+  edges: Iterable<GraphEdge>,
+): GraphEdge | null {
+  const f = lower(from);
+  const t = lower(to);
+  const all = Array.from(edges);
+  const exact = (e: GraphEdge): boolean => e.from === f && e.to === t;
+  const reversedSymmetric = (e: GraphEdge): boolean =>
+    isSymmetricKind(e.kind) && e.from === t && e.to === f;
+
+  const directed = DIRECTED_CODES.has(code);
+  const passes: ((e: GraphEdge) => boolean)[] = [];
+  if (directed) {
+    passes.push((e) => DIRECTED_KINDS.has(e.kind) && exact(e));
+  } else if (COVARIANCE_CODES.has(code)) {
+    passes.push((e) => isSymmetricKind(e.kind) && (exact(e) || reversedSymmetric(e)));
+  }
+  passes.push(exact);
+  if (!directed) passes.push(reversedSymmetric);
+
+  for (const pass of passes) {
+    const hit = all.find(pass);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 function attachEstimates(
   rows: EstimateRow[],
   edges: Map<string, GraphEdge>,
   upsert: EdgeUpsert,
 ): void {
-  // Find an existing edge regardless of declared kind by `(from, to)`.
-  // BY edges go latent->indicator, ON edges go predictor->dependent, so the
-  // table's `from`/`to` already match for both. An exact directed match on
-  // any edge wins. Only then, and only for a non-directed row, may a
-  // symmetric edge (WITH, COVAR) match in the reversed order: a directed
-  // row is a loading or regression with a direction of its own, so it must
-  // not be absorbed by a covariance between the same pair.
-  const findEdgeByEndpoints = (
-    from: string,
-    to: string,
-    allowReversedSymmetric: boolean,
-  ): GraphEdge | null => {
-    const f = lower(from);
-    const t = lower(to);
-    for (const e of edges.values()) {
-      if (e.from === f && e.to === t) return e;
-    }
-    if (!allowReversedSymmetric) return null;
-    for (const e of edges.values()) {
-      if (isSymmetricKind(e.kind) && e.from === t && e.to === f) return e;
-    }
-    return null;
-  };
-
   for (const row of rows) {
     if (row.to == null) continue; // residual / variance row, not an edge
-    let edge = findEdgeByEndpoints(row.from, row.to, !DIRECTED_CODES.has(row.code));
-
-    if (!edge) {
-      // Estimate-only edges (e.g. covariance code 2 between observed vars
-      // that wasn't declared `WITH` in the syntax) - synthesize as COVAR.
-      if (row.code === 2) {
-        edge = upsert('COVAR', row.from, row.to);
-      } else if (row.code === 91) {
-        edge = upsert('ON', row.from, row.to);
-      } else {
-        edge = upsert('ON', row.from, row.to);
-      }
-    }
+    // Estimate-only edges (e.g. covariance code 2 between observed vars that
+    // wasn't declared `WITH` in the syntax) are synthesized: COVAR for code
+    // 2, ON for anything else.
+    const edge =
+      matchEdgeForRow(row.code, row.from, row.to, edges.values()) ??
+      upsert(row.code === 2 ? 'COVAR' : 'ON', row.from, row.to);
 
     if (row.code === 91) {
       if (row.constraintLabel) edge.constraint = row.constraintLabel;

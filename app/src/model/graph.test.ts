@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
-import { buildGraph } from './graph.js';
+import { buildGraph, matchEdgeForRow } from './graph.js';
 
 const DGM_DIR = resolve(__dirname, '../../../dgm');
 const fixtures = readdirSync(DGM_DIR).filter((f) => f.endsWith('.dgm'));
@@ -193,10 +193,51 @@ describe('buildGraph - estimate rows prefer exact direction (P1)', () => {
     expect(w?.unstd).toBeNull();
   });
 
-  it('a directed row with only a reversed WITH pair falls back to an ON edge', () => {
-    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', ['11 1 y2 y1 0.250 0.080']);
+  it('a directed row (codes 1, 11, 21, 31) with only a reversed WITH pair falls back to an ON edge', () => {
+    for (const code of [1, 11, 21, 31]) {
+      const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', [`${code} 1 y2 y1 0.250 0.080`]);
+      const on = g.edges.find((e) => e.id === 'ON:y2->y1');
+      expect(on, `code ${code}`).toBeDefined();
+      const w = g.edges.find((e) => e.kind === 'WITH');
+      expect(w?.unstd, `code ${code}`).toBeNull();
+      expect(w?.stdyx, `code ${code}`).toBeNull();
+      if (code === 11) expect(on!.stdyx?.value).toBeCloseTo(0.25, 3);
+    }
+  });
+
+  it('a reversed code-91 row labels the WITH edge instead of synthesizing an ON edge', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', ['91 1 y2 y1 cv']);
+    expect(g.edges.find((e) => e.kind === 'WITH')?.constraint).toBe('cv');
+    expect(g.edges.filter((e) => e.kind === 'ON')).toEqual([]);
+  });
+});
+
+describe('buildGraph - estimate rows prefer an edge of the matching type (F1.1)', () => {
+  it('`y2 WITH y1; y1 ON y2;` puts rows `1`/`11 1 y2 y1` on the ON edge, not the WITH (estimates on WITH bug)', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny2 WITH y1;\ny1 ON y2;', [
+      '1 1 y2 y1 0.500 0.100',
+      '11 1 y2 y1 0.400 0.100',
+    ]);
     const on = g.edges.find((e) => e.id === 'ON:y2->y1');
-    expect(on?.stdyx?.value).toBeCloseTo(0.25, 3);
-    expect(g.edges.find((e) => e.kind === 'WITH')?.stdyx).toBeNull();
+    expect(on?.unstd?.value).toBeCloseTo(0.5, 3);
+    expect(on?.stdyx?.value).toBeCloseTo(0.4, 3);
+    const w = g.edges.find((e) => e.id === 'WITH:y2->y1');
+    expect(w?.unstd).toBeNull();
+    expect(w?.stdyx).toBeNull();
+  });
+
+  it('a directed row with only an exactly matching WITH edge still lands on it', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny2 WITH y1;', ['1 1 y2 y1 0.500 0.100']);
+    expect(g.edges.find((e) => e.id === 'WITH:y2->y1')?.unstd?.value).toBeCloseTo(0.5, 3);
+    expect(g.edges.filter((e) => e.kind === 'ON')).toEqual([]);
+  });
+
+  it('a covariance row (codes 2, 12, 22, 32) prefers a reversed WITH edge over an exact ON edge', () => {
+    const edges = synthGraph('f BY y1 y2 y3;\ny2 ON y1;\ny2 WITH y1;').edges;
+    for (const code of [2, 12, 22, 32]) {
+      expect(matchEdgeForRow(code, 'y1', 'y2', edges)?.id, `code ${code}`).toBe('WITH:y2->y1');
+    }
+    // Other non-directed codes keep the plain order: exact endpoints first.
+    expect(matchEdgeForRow(91, 'y1', 'y2', edges)?.id).toBe('ON:y1->y2');
   });
 });

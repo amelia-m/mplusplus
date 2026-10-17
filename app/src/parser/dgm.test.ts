@@ -280,3 +280,70 @@ describe('parseDgm - one modifier grammar for term lists and standalone pins (P2
     expect(self!.rhs[0].fixed).toBeCloseTo(0.5, 10);
   });
 });
+
+describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => {
+  const statementsOf = (input: string) =>
+    parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\n${input}`))
+      .modelStatements;
+
+  it('does not read `MODEL CONSTRAINT: NEW(...)` lines as phantom model statements', () => {
+    const stmts = statementsOf(
+      'MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\nNEW(a*0.5);\nNEW(b*0.3);',
+    );
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('stops at a later top-level command such as `OUTPUT:`', () => {
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nOUTPUT:\nf ON y1;');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('still finds the MODEL block when other commands follow it on later lines', () => {
+    const stmts = statementsOf('ANALYSIS: ESTIMATOR = ML;\nMODEL: f BY y1 y2 y3;\nf@1;\nOUTPUT: STANDARDIZED;');
+    expect(stmts.map((s) => [s.op, s.lhs])).toEqual([
+      ['BY', 'f'],
+      ['WITH', 'f'],
+    ]);
+  });
+
+  it('does not read a `*` inside a `(label)` as a pin (`y3 (a*0.5);` phantom bug)', () => {
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\ny3 (a*0.5);');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('rejects standalone pins whose name is not an identifier (`y1-y3@1;`, `[y1@0];`)', () => {
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\ny1-y3@1;\n[y1@0];');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+});
+
+describe('parseDgm - spaced modifier values (F1.4, F1.5)', () => {
+  const byTerms = (model: string) =>
+    parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\nMODEL:\n${model}`))
+      .modelStatements.find((s) => s.op === 'BY')!.rhs;
+
+  it('reads a spaced value with a leading plus, `y2* +0.5` (was read as a variable named +0.5)', () => {
+    const rhs = byTerms('f BY y1 y2* +0.5 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].start).toBeCloseTo(0.5, 10);
+  });
+
+  it('reads a spaced negative value, `y2@ -1`', () => {
+    const rhs = byTerms('f BY y1 y2@ -1 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].fixed).toBe(-1);
+  });
+
+  it('reads a spaced value with an exponent, `y2@ 1e-3`', () => {
+    const rhs = byTerms('f BY y1 y2@ 1e-3 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].fixed).toBeCloseTo(0.001, 12);
+  });
+
+  it('a `(label)` closes a valueless modifier: the number after it is not the start value', () => {
+    const rhs = byTerms('f BY y1 y2* (lab) 0.8 y3;');
+    expect(rhs[1].name).toBe('y2');
+    expect(rhs[1].constraint).toBe('lab');
+    expect(rhs[1].start).toBeNull();
+  });
+});

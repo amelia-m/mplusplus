@@ -155,13 +155,27 @@ function parseNamesList(text: string, re: RegExp): string[] {
     .filter((s) => s.length > 0);
 }
 
+/**
+ * A line that starts an Mplus command: a command keyword at the start of the
+ * line, optionally followed by more words (`MODEL CONSTRAINT`, `DATA
+ * IMPUTATION`, `MODEL g2`), then a colon. Mplus itself reads such a line as
+ * a new command, so it ends whatever section came before it. Model
+ * statements never contain a colon, so they cannot match.
+ */
+const SECTION_HEADER_RE =
+  /^[ \t]*(?:TITLE|DATA|VARIABLE|DEFINE|ANALYSIS|MODEL|OUTPUT|SAVEDATA|PLOT|MONTECARLO)\b[^:;\n]*:/im;
+
+/** The `MODEL:` command itself, at the start of a line. */
+const MODEL_HEADER_RE = /^[ \t]*MODEL[ \t]*:/im;
+
 function parseModelBlock(text: string): ModelStmt[] {
-  // The MODEL block runs from `MODEL:` to the next top-level section header
-  // (e.g. nothing - block ends at end of input section). Consume to end.
-  const headerRe = /MODEL\s*:\s*/i;
-  const m = headerRe.exec(text);
+  // The MODEL block runs from `MODEL:` to the next command header
+  // (`MODEL CONSTRAINT:`, `OUTPUT:`, ...) or the end of the input section.
+  const m = MODEL_HEADER_RE.exec(text);
   if (!m) return [];
-  const body = text.slice(m.index + m[0].length);
+  const rest = text.slice(m.index + m[0].length);
+  const next = SECTION_HEADER_RE.exec(rest);
+  const body = next ? rest.slice(0, next.index) : rest;
 
   // Split on `;` while ignoring inline whitespace/newlines. Each "statement"
   // ends in `;`. Discard empty fragments.
@@ -254,8 +268,8 @@ function parseTermList(s: string): ModelTerm[] {
 
 type Modifier = '*' | '@';
 
-/** A modifier value written as its own token: a plain decimal number. */
-const MODIFIER_VALUE_RE = /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/;
+/** A modifier value written as its own token: a plain decimal number, optionally signed. */
+const MODIFIER_VALUE_RE = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/;
 
 /**
  * Apply a modifier suffix such as `*`, `*0.8`, `@1` or `*0.5@1` to a term.
@@ -329,11 +343,12 @@ function tokenizeTerms(s: string): string[] {
  * Parse a free-standing pin like `Y1@0.01`, `f@1`, `f*0.5` or
  * `y1*0.5@1`, using the same modifier grammar as `parseTermList`. The
  * statement must be a single identifier-shaped term carrying at least one
- * `*` or `@` modifier; anything else (a bare name, a list, a range such as
+ * `*` or `@` modifier outside any `(label)`; anything else (a bare name, a
+ * name with only a label such as `y3 (a*0.5)`, a list, a range such as
  * `y1-y3@1`, an intercept in brackets) is not a pin and yields `null`.
  */
 function parsePinStatement(s: string): ModelTerm | null {
-  if (!/[*@]/.test(s)) return null;
+  if (!/[*@]/.test(s.replace(/\([^)]*\)/g, ''))) return null;
   const terms = parseTermList(s);
   if (terms.length !== 1) return null;
   const [term] = terms;
