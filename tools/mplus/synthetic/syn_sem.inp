@@ -1,0 +1,22 @@
+TITLE: mplusplus synthetic fixture: SEM with constraints
+  (invented model and names; simulated data only)
+DATA: FILE IS syn_sem.dat;
+VARIABLE:
+  NAMES ARE a1 a2 a3 b1 b2 b3 b4 c1 c2 c3 c4 x1 x2 z1;
+  USEVARIABLES ARE a1 a2 a3 b1 b2 b3 b4 c1 c2 c3 c4 x1 x2 z1;
+MODEL:
+  fa BY a1*
+        a2 (la)
+        a3 (la);
+  fa@1;
+  fb BY b1
+        b2 (lb)
+        b3 (lb)
+        b4;
+  fc BY c1 c2 c3 c4;
+  fa ON z1;
+  fb ON fa;
+  fc ON fa fb;
+  x1 x2 ON fc;
+  c4 WITH b4;
+OUTPUT: STANDARDIZED;

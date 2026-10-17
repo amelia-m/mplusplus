@@ -1,0 +1,12 @@
+TITLE: mplusplus synthetic fixture: two correlated factors and a regression
+  (invented model and names; simulated data only)
+DATA: FILE IS syn_twofactor.dat;
+VARIABLE:
+  NAMES ARE p1 p2 p3 q1 q2 q3 r1;
+  USEVARIABLES ARE p1 p2 p3 q1 q2 q3 r1;
+MODEL:
+  fp BY p1* p2*0.8 p3;
+  fq BY q1* q2 q3;
+  fp@1; fq@1;
+  r1 ON fp fq;
+OUTPUT: STANDARDIZED;

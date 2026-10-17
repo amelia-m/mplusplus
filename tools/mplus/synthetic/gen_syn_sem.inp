@@ -1,0 +1,36 @@
+TITLE: mplusplus synthetic fixture, data generation for syn_sem
+  (invented model and names; simulated data only)
+MONTECARLO:
+  NAMES ARE a1 a2 a3 b1 b2 b3 b4 c1 c2 c3 c4 x1 x2 z1;
+  NOBSERVATIONS = 500;
+  NREPS = 1;
+  SEED = 20261016;
+  SAVE = syn_sem.dat;
+MODEL POPULATION:
+  [z1@0]; z1@1;
+  fa BY a1*0.8 a2*0.7 a3*0.7;
+  fa*1;
+  fb BY b1*0.9 b2*0.6 b3*0.6 b4*0.5;
+  fb*0.6;
+  fc BY c1*0.7 c2*0.8 c3*0.5 c4*0.4;
+  fc*0.5;
+  a1*0.4 a2*0.4 a3*0.4;
+  b1*0.5 b2*0.5 b3*0.5 b4*0.5;
+  c1*0.5 c2*0.5 c3*0.5 c4*0.5;
+  fa ON z1*0.3;
+  fb ON fa*0.4;
+  fc ON fa*0.3 fb*0.5;
+  x1 ON fc*0.4;
+  x2 ON fc*0.3;
+  x1*0.6 x2*0.6;
+  c4 WITH b4*0.15;
+MODEL:
+  fa BY a1*0.8 a2*0.7 a3*0.7;
+  fa@1;
+  fb BY b1 b2 b3 b4;
+  fc BY c1 c2 c3 c4;
+  fa ON z1;
+  fb ON fa;
+  fc ON fa fb;
+  x1 x2 ON fc;
+  c4 WITH b4;

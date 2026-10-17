@@ -1,0 +1,12 @@
+app/node_modules/
+app/dist/
+app/.vite/
+app/coverage/
+app/tsconfig.tsbuildinfo
+*.log
+.DS_Store
+.claude/
+_scratch/
+# Third-party reference material is copyrighted: keep local, track only the index.
+docs/reference/*
+!docs/reference/README.md

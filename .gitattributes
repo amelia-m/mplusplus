@@ -1,0 +1,19 @@
+# Normalise line endings to LF in the repository and the working tree,
+# whatever core.autocrlf says on the machine.
+* text=auto eol=lf
+
+# Windows command scripts need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch binary artefacts.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.gh5 binary
+*.rds binary
+*.RData binary
+*.xlsx binary

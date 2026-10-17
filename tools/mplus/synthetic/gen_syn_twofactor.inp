@@ -1,0 +1,22 @@
+TITLE: mplusplus synthetic fixture, data generation for syn_twofactor
+  (invented model and names; simulated data only)
+MONTECARLO:
+  NAMES ARE p1 p2 p3 q1 q2 q3 r1;
+  NOBSERVATIONS = 400;
+  NREPS = 1;
+  SEED = 20261017;
+  SAVE = syn_twofactor.dat;
+MODEL POPULATION:
+  fp BY p1*0.8 p2*0.7 p3*0.6;
+  fq BY q1*0.8 q2*0.7 q3*0.6;
+  fp@1; fq@1;
+  fp WITH fq*0.3;
+  p1*0.4 p2*0.4 p3*0.4;
+  q1*0.4 q2*0.4 q3*0.4;
+  r1 ON fp*0.3 fq*0.2;
+  r1*0.7;
+MODEL:
+  fp BY p1* p2 p3;
+  fq BY q1* q2 q3;
+  fp@1; fq@1;
+  r1 ON fp fq;
