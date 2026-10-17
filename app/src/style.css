@@ -197,6 +197,10 @@ html, body {
   width: 100%;
   height: 100%;
   user-select: none;
+  /* Pointer and touch drags on the canvas (node drag, marquee) belong to
+     the app: without this a touch browser takes the drag as a pan or zoom
+     and sends pointercancel, which ends the drag. */
+  touch-action: none;
 }
 
 .inspector {
@@ -288,7 +292,7 @@ html, body {
   width: 56px;
 }
 
-g.node { cursor: grab; }
+g.node { cursor: grab; touch-action: none; }
 g.node:active { cursor: grabbing; }
 g.node.selected ellipse,
 g.node.selected rect,

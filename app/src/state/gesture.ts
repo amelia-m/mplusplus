@@ -36,7 +36,9 @@
  *   - `onGestureEnd(fn)` calls `fn(token)` after each gesture ends (once per
  *     gesture, with the token that owned it) and returns an unsubscribe
  *     function. UI that defers work while a control is live (for example
- *     rebuilding a panel) can use it.
+ *     rebuilding a panel) can use it. Every listener runs even if an
+ *     earlier one throws; the error is rethrown after the last listener,
+ *     with the gesture already ended.
  *   - Undo or redo while a gesture is active is not supported; use
  *     `undoHistory` / `redoHistory` in `history.ts`, which refuse it.
  *
@@ -112,7 +114,20 @@ function finish(g: ActiveGesture): void {
     const past = [...t.getState().pastStates, g.snapshot];
     t.setState({ pastStates: past.slice(-HISTORY_LIMIT), futureStates: [] });
   }
-  for (const fn of [...endListeners]) fn(g.token);
+  // Every listener runs even if one throws, so a failing listener cannot
+  // keep another from releasing what it holds (a slider's token, say). The
+  // gesture is already over; the first error is rethrown afterwards, or an
+  // AggregateError when several listeners threw.
+  const errors: unknown[] = [];
+  for (const fn of [...endListeners]) {
+    try {
+      fn(g.token);
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, 'gesture-end listeners threw');
 }
 
 export function isGestureActive(): boolean {

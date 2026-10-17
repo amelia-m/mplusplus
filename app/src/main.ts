@@ -16,14 +16,15 @@ import {
   type RenderState,
   type GroupSelection,
 } from './render/svg.js';
-import { wireNodeDrag } from './render/drag.js';
+import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
 import { wireSelection } from './render/selection.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
 import { mountInspector } from './ui/inspector.js';
 import { classifyHistoryKey } from './ui/historyKeys.js';
 import { countMatchedPValues } from './ui/pValueMatch.js';
-import { isFileDrag } from './ui/fileDrag.js';
+import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
+import { describeTarget } from './ui/textEntry.js';
 import { contentViewBox, formatViewBox } from './ui/viewBox.js';
 import { useStore } from './state/store.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
@@ -91,19 +92,23 @@ dropzone.addEventListener('dragover', () => dropzone.classList.add('drag-over'))
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
 
 // Files may be dropped anywhere on the page. Handling dragover/drop on the
-// window keeps the browser from navigating away to the dropped file, and
-// routes every drop (dropzone, canvas, panels) through `handleFile`. Only
-// drags that carry files are taken over, so dragging text into an input
-// keeps its default behaviour.
+// window keeps the browser from navigating away to a dropped file or link,
+// and routes every file drop (dropzone, canvas, panels) through
+// `handleFile`. Which drags are taken over is `interceptsWindowDrag`: all
+// of them, except a non-file drag over a text-entry field, so dragging text
+// into an input keeps its default behaviour.
 window.addEventListener('dragover', (e) => {
-  if (!isFileDrag(e.dataTransfer?.types)) return;
+  const types = e.dataTransfer?.types;
+  if (!interceptsWindowDrag(types, describeTarget(e.target))) return;
   e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  if (e.dataTransfer) e.dataTransfer.dropEffect = isFileDrag(types) ? 'copy' : 'none';
 });
 window.addEventListener('drop', (e) => {
   dropzone.classList.remove('drag-over');
-  if (!isFileDrag(e.dataTransfer?.types)) return;
+  const types = e.dataTransfer?.types;
+  if (!interceptsWindowDrag(types, describeTarget(e.target))) return;
   e.preventDefault();
+  if (!isFileDrag(types)) return;
   const file = e.dataTransfer?.files?.[0];
   if (file) void handleFile(file);
 });
@@ -119,13 +124,7 @@ picker.addEventListener('change', () => {
 });
 
 window.addEventListener('keydown', (e) => {
-  const el = e.target instanceof HTMLElement ? e.target : null;
-  const target = el && {
-    tagName: el.tagName,
-    isContentEditable: el.isContentEditable,
-    type: el instanceof HTMLInputElement ? el.type : undefined,
-  };
-  const action = classifyHistoryKey(e, target);
+  const action = classifyHistoryKey(e, describeTarget(e.target));
   if (action === 'none') return;
   e.preventDefault();
   // Refused (returns false) in the middle of a drag or scrub.
@@ -189,8 +188,12 @@ async function runLayout(graph: ModelGraph): Promise<void> {
     nodeWidth: NODE_DIMENSIONS.width,
     nodeHeight: NODE_DIMENSIONS.height,
   });
-  // A gesture still open at load would push a snapshot of the old diagram
-  // when it ends. End it first, whoever owns it; a no-op when none is active.
+  // A node drag still in progress would keep writing positions (stale ones,
+  // one undo entry per move) into the new layout, and a gesture still open
+  // would push a snapshot of the old diagram when it ends. Cancel the drag,
+  // which ends its own gesture, then end any other gesture, whoever owns
+  // it. Both are no-ops when nothing is active.
+  cancelNodeDrag();
   endActiveGesture();
   useStore.getState().loadGraph(graph, result);
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;

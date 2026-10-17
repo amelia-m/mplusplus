@@ -2,6 +2,7 @@
  * Classifies a keydown as an undo or redo shortcut. Pure so it can be tested
  * without a DOM; `main.ts` passes the event and its target.
  */
+import { isTextEntry, type TextEntryTarget } from './textEntry.js';
 
 export type HistoryKeyAction = 'undo' | 'redo' | 'none';
 
@@ -13,41 +14,12 @@ export interface HistoryKeyEvent {
   altKey: boolean;
 }
 
-/** The parts of the focused element that decide whether keys belong to it. */
-export interface KeyTarget {
-  tagName?: string;
-  isContentEditable?: boolean;
-  /** An `input`'s `type` attribute; missing or unknown means text. */
-  type?: string;
-}
-
 /**
- * `input` types that are not text entry. These controls have no text undo of
- * their own, so Ctrl+Z / Ctrl+Y on them undo the diagram. Every other type,
- * including a missing or unknown one (the browser treats it as text), keeps
- * the keys for its own editing.
+ * The parts of the focused element that decide whether keys belong to it.
+ * A text-entry element (`isTextEntry`) owns Ctrl+Z / Ctrl+Y; non-text
+ * controls have no text undo of their own, so the keys undo the diagram.
  */
-const NON_TEXT_INPUT_TYPES = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'hidden',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit',
-]);
-
-/** True when the focused element edits text and so owns Ctrl+Z / Ctrl+Y. */
-function isTextEntry(target: KeyTarget): boolean {
-  if (target.isContentEditable) return true;
-  const tag = target.tagName?.toUpperCase();
-  if (tag === 'TEXTAREA') return true;
-  if (tag === 'INPUT') return !NON_TEXT_INPUT_TYPES.has((target.type ?? 'text').toLowerCase());
-  return false;
-}
+export type KeyTarget = TextEntryTarget;
 
 /**
  * Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y redo. Keys compare

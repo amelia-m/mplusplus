@@ -136,6 +136,24 @@ describe('undo gestures (Y1)', () => {
     expect(calls).toBe(1);
   });
 
+  it('a throwing gesture-end listener does not stop later listeners (it stranded the slider token)', () => {
+    const seen: string[] = [];
+    const offA = onGestureEnd(() => {
+      seen.push('a');
+      throw new Error('listener boom');
+    });
+    const offB = onGestureEnd(() => seen.push('b'));
+    try {
+      expect(() => endGesture(beginGesture())).toThrow('listener boom');
+      expect(seen).toEqual(['a', 'b']);
+      expect(isGestureActive()).toBe(false);
+      expect(temporal.getState().isTracking).toBe(true);
+    } finally {
+      offA();
+      offB();
+    }
+  });
+
   it('ends the gesture when work inside it throws (try/finally contract)', () => {
     expect(() => {
       const g = beginGesture();
@@ -347,5 +365,44 @@ describe('no-op writes add no undo entry (Q3)', () => {
     useStore.getState().setNodePositions({ a: pos(41) });
     endGesture(g);
     expect(past()).toBe(before + 1);
+  });
+});
+
+describe('empty style overrides are never stored (F2.7)', () => {
+  beforeEach(() => {
+    useStore.setState({ nodeStyles: {}, edgeStyles: {} });
+    temporal.getState().clear();
+  });
+
+  it('clearing the last field of an override deletes its record (it stored {})', () => {
+    useStore.getState().setNodeStyles(['a'], { fill: '#111111' });
+    useStore.getState().setEdgeStyles(['e1'], { stroke: '#222222' });
+    const before = past();
+    useStore.getState().setNodeStyles(['a'], { fill: undefined });
+    expect(past()).toBe(before + 1);
+    useStore.getState().setEdgeStyles(['e1'], { stroke: undefined });
+    expect(useStore.getState().nodeStyles).toEqual({});
+    expect('a' in useStore.getState().nodeStyles).toBe(false);
+    expect('e1' in useStore.getState().edgeStyles).toBe(false);
+    expect(past()).toBe(before + 2);
+  });
+
+  it('does not store undefined fields (they overwrote the base style when merged)', () => {
+    useStore.getState().setNodeStyles(['a'], { fill: '#111111', stroke: undefined });
+    expect(Object.keys(useStore.getState().nodeStyles.a)).toEqual(['fill']);
+  });
+
+  it('a patch of only undefined fields on an object with no override stores nothing and adds 0 entries', () => {
+    const cur = useStore.getState().nodeStyles;
+    useStore.getState().setNodeStyles(['a', 'b'], { fill: undefined });
+    useStore.getState().setEdgeStyles(['e1'], { stroke: undefined });
+    expect(useStore.getState().nodeStyles).toBe(cur);
+    expect(useStore.getState().edgeStyles).toEqual({});
+    expect(past()).toBe(0);
+  });
+
+  it('keeps an override whose value equals the default, since it pins the value', () => {
+    useStore.getState().setNodeStyles(['a'], { shape: null });
+    expect(useStore.getState().nodeStyles).toEqual({ a: { shape: null } });
   });
 });
