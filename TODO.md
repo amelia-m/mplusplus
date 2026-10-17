@@ -22,6 +22,8 @@ synthetic fixtures in `dgm/` (see `dgm/README.md`).
 - [ ] **Multi-group and mixture models.** `%OVERALL%` and `MODEL g2:` labels become nodes (`parseDgm` / `parseModelBlock` in `app/src/parser/dgm.ts`); group estimates overwrite each other (`attachEstimates` in `graph.ts`, `buildPValueMap` in `parser/out.ts`). No fixture in `dgm/` uses these. Decision: scope of multi-group support.
 - [ ] **`y1*0.5@1` sets both `free` and `fixed`.** `applyModifiers` in `app/src/parser/dgm.ts`, whose doc comment lists `*0.5@1` as an example. Decision: precedence rule. Proposed: `@` wins (fixed, not free), since a fixed parameter cannot also be free.
 - [ ] **Mplus abbreviated keywords are not recognised.** `USEV = ...` gives an empty use list (the NAMES/USEVARIABLES patterns in `parseDgm`, `app/src/parser/dgm.ts`). Mplus accepts abbreviations of option keywords. Decision: support abbreviations generally (minimum-prefix matching) or only common ones such as `USEV`?
+- [ ] **Unmatched standardized covariance rows become ON edges.** In `attachEstimates` (`app/src/model/graph.ts`) only an unmatched code-2 row synthesizes a COVAR edge; an unmatched 12, 22 or 32 row falls back to an ON edge. Real Mplus output always writes code 2 before 12/22/32, so this only bites files where the unstandardized row is missing. Decision: treat every covariance code (last digit 2) like code 2 when synthesizing? Proposed: yes. (Deferred by the 2026-10-17 fix batch, F1.)
+- [ ] **Group-specific MODEL sections are dropped.** Since 2026-10-17 `parseModelBlock` (`app/src/parser/dgm.ts`) ends the overall MODEL block at the next command header, including `MODEL g2:`, so group-specific statements are no longer read (before, they produced garbage edges such as a node named `model`). Part of the multi-group decision above; no multi-group fixture yet. The command-header keyword list is from memory, not checked against the User's Guide.
 - [ ] **A second `.out` merges into the first one's p-values.** `setPValues` in `app/src/state/store.ts`. Edges missing from the new run keep stale p-values. Decision: replace or merge? Proposed: replace.
 
 ### Canvas and interaction
@@ -45,6 +47,10 @@ Candidates and licences are in `_scratch/research/2026-10-16-public-mplus-models
 - [ ] **Not yet searched.** OSF was down during the search: check Seddig 2024 (doi:10.1080/10705511.2023.2175684, OSF r3mnb) and OSF projects sjph7 and D2K7Y. Also unchecked: GESIS Groskurth et al. Mplus code (doi:10.7802/1.1983), journal supplements (Collabra, Meta-Psychology, Journal of Open Psychology Data), figshare, ICPSR.
 - [ ] **Unverified claims in the notes.** Model contents come from file names, record descriptions and abstracts (no `.inp`/`.out` opened); the Work Addiction `.txt` files are assumed to be Mplus syntax; repository licence fields are assumed to cover every file, including third-party survey data.
 - Do not download from GitHub lichendong/2024_ge_interplay_ext_trajectory: it contains files named like individual-level (possibly genetic) human-subjects data (`eur_id.dat`, `eur_wave_id.dat`).
+
+## Tooling
+
+- [ ] **`tools/mplus/run-ug-examples.R` limits (deferred 2026-10-17, F3).** Its `FILE` regex misses a `FILE` statement split across lines and also picks up `SAVEDATA` file names (copied only if they exist in the inputs); an `OUTPUT` with only `STDY` or `STD` still gets `STANDARDIZED` added, while `STANDARDIZED(STDY)` counts as present though it gives no STDYX section; the Mplus path is hard-coded to the default Windows install; the script stops at the first failing example after earlier ones are prepared, and does not pre-check imputation lists. Unverified: whether MplusAutomation 1.3 applies `filefilter` to the file name or the full path; that Mplus accepts `STAN` abbreviations and `STDYX` alone; that imputation list files hold one bare file name per line. The rewritten script has been parse-checked but not run.
 
 ## Noted, low priority
 

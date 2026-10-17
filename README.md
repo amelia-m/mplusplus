@@ -28,6 +28,8 @@ All development commands run from the `app/` directory.
 - Node.js (v18 or higher recommended)
 - npm
 
+Mplus is not needed to run or develop the app: the tests use the committed fixtures in `dgm/` and `app/test/fixtures/`. Mplus is needed only to regenerate fixtures with the scripts in `tools/mplus/`, and for the local reference material described in [docs/reference/README.md](docs/reference/README.md).
+
 ### Development
 
 ```bash
