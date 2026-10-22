@@ -95,15 +95,22 @@ export function parseDgm(text: string): DgmFile {
   const inputBlock = split.before + 'INPUT_END\n';
 
   const cleanedInput = stripCommentsAndJoin(split.before);
-  const variables = parseNamesList(
-    cleanedInput,
-    new RegExp(`VARIABLE\\s*:\\s*[\\s\\S]*?\\bNAMES${OPTION_ASSIGN}([\\s\\S]*?);`, 'i'),
+  const variables = generateNamesList(
+    parseNamesList(
+      cleanedInput,
+      new RegExp(`VARIABLE\\s*:\\s*[\\s\\S]*?\\bNAMES${OPTION_ASSIGN}([\\s\\S]*?);`, 'i'),
+    ),
   );
-  const useVar = parseNamesList(
-    cleanedInput,
-    new RegExp(`\\bUSEVAR(?:IABLES)?${OPTION_ASSIGN}([\\s\\S]*?);`, 'i'),
+  const useVar = expandByPosition(
+    parseNamesList(
+      cleanedInput,
+      new RegExp(`\\bUSEVAR(?:IABLES)?${OPTION_ASSIGN}([\\s\\S]*?);`, 'i'),
+    ),
+    variables,
   );
-  const modelStatements = parseModelBlock(cleanedInput);
+  // List order for observed variables in MODEL ranges: USEVARIABLES, or
+  // NAMES when there is no USEVARIABLES (see `rangeByPosition`).
+  const modelStatements = parseModelBlock(cleanedInput, useVar.length > 0 ? useVar : variables);
 
   const { header, estimates } = parseEstimateSection(split.after);
 
@@ -168,7 +175,20 @@ const SECTION_HEADER_RE =
 /** The `MODEL:` command itself, at the start of a line. */
 const MODEL_HEADER_RE = /^[ \t]*MODEL[ \t]*:/im;
 
-function parseModelBlock(text: string): ModelStmt[] {
+/** A MODEL statement split at its operator, before list ranges are expanded. */
+interface SplitStmt {
+  raw: string;
+  /** `null` for a statement without BY / ON / WITH (a variance pin such as `f@1`). */
+  op: ModelOp | null;
+  lhs: ModelTerm[];
+  rhs: ModelTerm[];
+}
+
+/**
+ * Parse the MODEL block. `observedOrder` is the list order of observed
+ * variables, used to expand list ranges such as `y1-y3`.
+ */
+function parseModelBlock(text: string, observedOrder: string[]): ModelStmt[] {
   // The MODEL block runs from `MODEL:` to the next command header
   // (`MODEL CONSTRAINT:`, `OUTPUT:`, ...) or the end of the input section.
   const m = MODEL_HEADER_RE.exec(text);
@@ -179,47 +199,63 @@ function parseModelBlock(text: string): ModelStmt[] {
 
   // Split on `;` while ignoring inline whitespace/newlines. Each "statement"
   // ends in `;`. Discard empty fragments.
-  const statements = body.split(';').map((s) => s.trim()).filter((s) => s.length > 0);
+  const statements = body
+    .split(';')
+    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .filter((s) => s.length > 0)
+    .map(splitStatement);
+
+  // Latents are ordered by their BY statements, wherever a range naming
+  // them appears (User's Guide v8, ch. 17 p. 731), so collect them first.
+  const latentOrder = uniqIgnoreCase(
+    statements.filter((s) => s.op === 'BY' && s.lhs.length > 0).map((s) => s.lhs[0].name),
+  );
+  const resolve: RangeResolver = (first, last) =>
+    rangeByPosition(first, last, observedOrder) ?? rangeByPosition(first, last, latentOrder);
 
   const out: ModelStmt[] = [];
-  for (const raw of statements) {
-    const flat = raw.replace(/\s+/g, ' ').trim();
-    if (!flat) continue;
-
-    // Detect operator. Match BY / ON / WITH as whole words, case-insensitive.
-    const opMatch = /\s(BY|ON|WITH)\s/i.exec(' ' + flat + ' ');
-    if (!opMatch) {
+  for (const s of statements) {
+    if (s.op === null) {
       // Standalone like `f@1` or `Y1@0.01` - store as a synthetic WITH-self
       // entry so callers can recover the variance/pin if they care. We model
       // these as a single-term "WITH" statement against itself with the pin.
-      const self = parsePinStatement(flat);
-      if (self) out.push({ raw: flat, op: 'WITH', lhs: self.name, rhs: [self] });
+      for (const self of parsePinStatement(s.raw, resolve)) {
+        out.push({ raw: s.raw, op: 'WITH', lhs: self.name, rhs: [self] });
+      }
       continue;
     }
-
-    const op = opMatch[1].toUpperCase() as ModelOp;
-    // Split exactly once on the operator with surrounding spaces.
-    const opRe = new RegExp(`\\s${op}\\s`, 'i');
-    const idx = flat.search(opRe);
-    const lhsPart = flat.slice(0, idx).trim();
-    const rhsPart = flat.slice(idx).replace(opRe, '').trim();
-
-    // Mplus allows multiple LHS for ON/WITH (e.g. `x1 x2 ON f`).
-    // For BY there is exactly one latent.
-    const lhsTerms = parseTermList(lhsPart);
-    const rhsTerms = parseTermList(rhsPart);
-
-    if (op === 'BY') {
-      out.push({ raw: flat, op, lhs: lhsTerms[0]?.name ?? '', rhs: rhsTerms });
+    // A range may stand on either side of ON and WITH but only on the right
+    // of BY (ch. 17 p. 731): the left of BY is the one latent it defines.
+    const rhs = expandTerms(s.rhs, resolve);
+    if (s.op === 'BY') {
+      out.push({ raw: s.raw, op: s.op, lhs: s.lhs[0]?.name ?? '', rhs });
     } else {
-      // Expand `a b ON c d` into one statement per LHS so consumers can iterate
-      // edges trivially. RHS is shared.
-      for (const l of lhsTerms) {
-        out.push({ raw: flat, op, lhs: l.name, rhs: rhsTerms });
+      // Expand `a b ON c d` (and `a1-a3 ON c`) into one statement per LHS so
+      // consumers can iterate edges trivially. RHS is shared.
+      for (const l of expandTerms(s.lhs, resolve)) {
+        out.push({ raw: s.raw, op: s.op, lhs: l.name, rhs });
       }
     }
   }
   return out;
+}
+
+/** Split one flattened MODEL statement at its BY / ON / WITH operator. */
+function splitStatement(flat: string): SplitStmt {
+  // Detect operator. Match BY / ON / WITH as whole words, case-insensitive.
+  const opMatch = /\s(BY|ON|WITH)\s/i.exec(' ' + flat + ' ');
+  if (!opMatch) return { raw: flat, op: null, lhs: [], rhs: [] };
+
+  const op = opMatch[1].toUpperCase() as ModelOp;
+  // Split exactly once on the operator with surrounding spaces.
+  const opRe = new RegExp(`\\s${op}\\s`, 'i');
+  const idx = flat.search(opRe);
+  const lhsPart = flat.slice(0, idx).trim();
+  const rhsPart = flat.slice(idx).replace(opRe, '').trim();
+
+  // Mplus allows multiple LHS for ON/WITH (e.g. `x1 x2 ON f`).
+  // For BY there is exactly one latent.
+  return { raw: flat, op, lhs: parseTermList(lhsPart), rhs: parseTermList(rhsPart) };
 }
 
 /**
@@ -342,17 +378,132 @@ function tokenizeTerms(s: string): string[] {
 /**
  * Parse a free-standing pin like `Y1@0.01`, `f@1`, `f*0.5` or
  * `y1*0.5@1`, using the same modifier grammar as `parseTermList`. The
- * statement must be a single identifier-shaped term carrying at least one
- * `*` or `@` modifier outside any `(label)`; anything else (a bare name, a
- * name with only a label such as `y3 (a*0.5)`, a list, a range such as
- * `y1-y3@1`, an intercept in brackets) is not a pin and yields `null`.
+ * statement must be a single term carrying at least one `*` or `@` modifier
+ * outside any `(label)`. A list range (`f1-f3@1`) gives one pin per variable
+ * it denotes (User's Guide v8, ch. 17 p. 736). Anything else (a bare name, a
+ * name with only a label such as `y3 (a*0.5)`, a list of names, a range that
+ * cannot be resolved, an intercept in brackets) is not a pin and yields no
+ * terms.
  */
-function parsePinStatement(s: string): ModelTerm | null {
-  if (!/[*@]/.test(s.replace(/\([^)]*\)/g, ''))) return null;
+function parsePinStatement(s: string, resolve: RangeResolver): ModelTerm[] {
+  if (!/[*@]/.test(s.replace(/\([^)]*\)/g, ''))) return [];
   const terms = parseTermList(s);
-  if (terms.length !== 1) return null;
-  const [term] = terms;
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(term.name) ? term : null;
+  if (terms.length !== 1) return [];
+  const pins = expandTerms(terms, resolve);
+  return pins.every((t) => IDENT_RE.test(t.name)) ? pins : [];
+}
+
+// ---------- list ranges ----------
+//
+// Mplus's list function (User's Guide v8, ch. 17 "Convenience features for
+// the MODEL command", pp. 730-732): a hyphen between two names denotes every
+// variable from the first to the last, by position in a list order.
+// - Observed variables: the USEVARIABLES order, or NAMES when there is no
+//   USEVARIABLES. Ch. 17 p. 730 says NAMES order is used when every NAMES
+//   variable is analysed; ch. 15 pp. 599-600 says USEVARIABLES order decides.
+//   Mplus 8.11 follows USEVARIABLES in that case too (probe 2026-10-22:
+//   `USEVARIABLES = k1 k4 k2 k3 k5`, `fk BY k1-k3` loads on k1 k4 k2 k3).
+// - Continuous latents: the order of their BY statements (p. 731).
+// - A range may appear on both sides of ON and WITH and on the right of BY;
+//   a modifier or label after it applies to each variable (pp. 733, 736-737).
+// - In NAMES, a range generates names instead (ch. 15 p. 597); in
+//   USEVARIABLES it is resolved by NAMES position.
+// A range that cannot be resolved (an endpoint not in the list, a reversed
+// range, which Mplus 8.11 rejects, or a span from an observed variable to a
+// latent, which the Guide does not describe) is kept as written.
+
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** `first-last`: two names joined by a hyphen, with no spaces. */
+const RANGE_RE = /^([A-Za-z_][A-Za-z0-9_]*)-([A-Za-z_][A-Za-z0-9_]*)$/;
+
+/** The names a list range `first-last` denotes, or `null` if it cannot be resolved. */
+type RangeResolver = (first: string, last: string) => string[] | null;
+
+function splitRange(token: string): [string, string] | null {
+  const m = RANGE_RE.exec(token);
+  return m ? [m[1], m[2]] : null;
+}
+
+/**
+ * The variables from `first` to `last` by position in `order` (case-
+ * insensitive), spelled as in `order`; `null` if either end is missing or
+ * `last` comes before `first`.
+ */
+function rangeByPosition(first: string, last: string, order: string[]): string[] | null {
+  const lowered = order.map((n) => n.toLowerCase());
+  const a = lowered.indexOf(first.toLowerCase());
+  const b = lowered.indexOf(last.toLowerCase());
+  if (a < 0 || b < 0 || a > b) return null;
+  return order.slice(a, b + 1);
+}
+
+/** Expand each range token in a list by position in `order`. */
+function expandByPosition(tokens: string[], order: string[]): string[] {
+  return tokens.flatMap((t) => {
+    const r = splitRange(t);
+    return (r && rangeByPosition(r[0], r[1], order)) ?? [t];
+  });
+}
+
+/**
+ * Replace each range term with one copy per variable it denotes, carrying
+ * the term's modifiers and label to every copy.
+ */
+function expandTerms(terms: ModelTerm[], resolve: RangeResolver): ModelTerm[] {
+  return terms.flatMap((term) => {
+    const r = splitRange(term.name);
+    const names = r ? resolve(r[0], r[1]) : null;
+    return names ? names.map((name) => ({ ...term, name })) : [term];
+  });
+}
+
+/** Expand the ranges in a NAMES list into the names they generate. */
+function generateNamesList(tokens: string[]): string[] {
+  return tokens.flatMap((t) => {
+    const r = splitRange(t);
+    return (r && generateNames(r[0], r[1])) ?? [t];
+  });
+}
+
+/**
+ * The names a NAMES range generates (User's Guide v8, ch. 15 p. 597):
+ * `y1-y5` gives y1 to y5, `itema-itemd` gives itema to itemd. Numbers keep
+ * the width of the first one (`k08-k10` gives k08 k09 k10; Mplus 8.11
+ * probe). `null` when the two names do not share a stem or run backwards.
+ */
+function generateNames(first: string, last: string): string[] | null {
+  const numbered = /^(.*?)(\d+)$/;
+  const a = numbered.exec(first);
+  const b = numbered.exec(last);
+  if (a && b) {
+    const from = Number(a[2]);
+    const to = Number(b[2]);
+    if (a[1].toLowerCase() !== b[1].toLowerCase() || from > to) return null;
+    const out: string[] = [];
+    for (let n = from; n <= to; n++) out.push(a[1] + String(n).padStart(a[2].length, '0'));
+    return out;
+  }
+  // Lettered: same stem, a single final letter that runs forwards.
+  const stem = first.slice(0, -1);
+  const fromCh = first.slice(-1).toLowerCase();
+  const toCh = last.slice(-1).toLowerCase();
+  const lettered =
+    !a &&
+    !b &&
+    first.length === last.length &&
+    stem.toLowerCase() === last.slice(0, -1).toLowerCase() &&
+    /[a-z]/.test(fromCh) &&
+    /[a-z]/.test(toCh) &&
+    fromCh <= toCh;
+  if (!lettered) return null;
+  const upper = first.slice(-1) !== fromCh;
+  const out: string[] = [];
+  for (let c = fromCh.charCodeAt(0); c <= toCh.charCodeAt(0); c++) {
+    const ch = String.fromCharCode(c);
+    out.push(stem + (upper ? ch.toUpperCase() : ch));
+  }
+  return out;
 }
 
 // ---------- estimate-section parsing ----------
@@ -382,30 +533,12 @@ function parseEstimateSection(text: string): ParsedSection {
   const allVariables = lines[i].split(/\s+/);
   i++;
 
-  // Skip a few more numeric/header lines until the groupings count.
-  // After the variable list we expect:
-  //   <some int>    (number of "structural" things - varies)
-  //   <int int int ...>   (per-variable type codes)
-  //   <0>
-  //   <N>           (number of latent groupings)
-  //   <latent>
-  //   <obs1 obs2 ...>
-  //   ...
-  // Strategy: scan forward for a single-int line followed by an alpha-line.
-  // The single-int IS the groupings count.
-  let groupCount: number | null = null;
-  while (i < lines.length) {
-    if (/^\d+$/.test(lines[i]) && i + 1 < lines.length && /^[A-Za-z_]/.test(lines[i + 1])) {
-      // Peek ahead: the line after `<latent>` must look like a list of names.
-      const candidateCount = Number(lines[i]);
-      if (i + 2 < lines.length && looksLikeVariableList(lines[i + 2])) {
-        groupCount = candidateCount;
-        i++;
-        break;
-      }
-    }
-    i++;
-  }
+  const found =
+    readGroupingsCount(lines, i, allVariables.length) ?? scanForGroupingsCount(lines, i);
+  // Without a groupings count the rest of the header cannot be told apart
+  // from estimate rows, so nothing more is read.
+  const groupCount = found?.count ?? null;
+  i = found?.next ?? lines.length;
 
   const groupings: DgmHeader['groupings'] = [];
   if (groupCount != null) {
@@ -425,6 +558,64 @@ function parseEstimateSection(text: string): ParsedSection {
   }
 
   return { header: { allVariables, groupings }, estimates };
+}
+
+/** Where the groupings count is: its value and the index of the line after it. */
+interface GroupingsCount {
+  count: number;
+  next: number;
+}
+
+/**
+ * Read the groupings count from the fixed header layout that follows the
+ * variable list:
+ *
+ *     <int>                one line
+ *     <code code ...>      one integer type code per variable
+ *     0                    single-integer lines; the last one is
+ *     <N>                  the number of latent groupings (0 with no latents)
+ *     <latent> / <obs1 obs2 ...>   N pairs, then the estimate rows
+ *
+ * Every .dgm checked on 2026-10-22 has this layout: the fixtures in `dgm/`
+ * (Mplus 8.11), local runs of User's Guide examples and of a public
+ * replication package. `null` when the header does not, so the caller can
+ * fall back.
+ */
+function readGroupingsCount(
+  lines: string[],
+  start: number,
+  variableCount: number,
+): GroupingsCount | null {
+  let i = start;
+  if (!/^\d+$/.test(lines[i] ?? '')) return null;
+  i++;
+  const codes = (lines[i] ?? '').split(/\s+/);
+  if (codes.length !== variableCount || !codes.every((t) => /^-?\d+$/.test(t))) return null;
+  i++;
+  let count: number | null = null;
+  while (i < lines.length && /^\d+$/.test(lines[i])) count = Number(lines[i++]);
+  if (count == null) return null;
+  // A latent name must follow a non-zero count.
+  if (count > 0 && !/^[A-Za-z_]/.test(lines[i] ?? '')) return null;
+  return { count, next: i };
+}
+
+/**
+ * Fallback for a header that does not have the layout `readGroupingsCount`
+ * expects: the first single-integer line followed by a latent name and a
+ * list of names. It cannot find a count of 0.
+ */
+function scanForGroupingsCount(lines: string[], start: number): GroupingsCount | null {
+  for (let i = start; i + 2 < lines.length; i++) {
+    if (
+      /^\d+$/.test(lines[i]) &&
+      /^[A-Za-z_]/.test(lines[i + 1]) &&
+      looksLikeVariableList(lines[i + 2])
+    ) {
+      return { count: Number(lines[i]), next: i + 1 };
+    }
+  }
+  return null;
 }
 
 function looksLikeVariableList(line: string): boolean {
@@ -490,4 +681,15 @@ function parseEstimateRow(line: string): EstimateRow | null {
 
 function uniq<T>(xs: T[]): T[] {
   return Array.from(new Set(xs));
+}
+
+/** Names without repeats, compared case-insensitively; the first spelling wins. */
+function uniqIgnoreCase(xs: string[]): string[] {
+  const seen = new Set<string>();
+  return xs.filter((x) => {
+    const key = x.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

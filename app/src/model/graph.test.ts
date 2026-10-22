@@ -75,6 +75,51 @@ describe('buildGraph - syn_twofactor.dgm', () => {
   });
 });
 
+// syn_path.dgm / syn_range.dgm: synthetic fixtures (Mplus 8.11). See dgm/README.md.
+describe('buildGraph - syn_path.dgm (no latents: every path lost its estimate)', () => {
+  it('puts an unstandardized and a STDYX estimate on every regression path', () => {
+    const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8')));
+    const on = graph.edges.filter((e) => e.kind === 'ON');
+    expect(on.map((e) => e.id).sort()).toEqual(
+      ['ON:k1->d2', 'ON:k1->m1', 'ON:k2->m1', 'ON:k3->d1', 'ON:m1->d1', 'ON:m1->d2'],
+    );
+    for (const e of on) {
+      expect(e.unstd, e.id).not.toBeNull();
+      expect(e.stdyx, e.id).not.toBeNull();
+    }
+    expect(graph.nodes.every((n) => n.kind === 'observed')).toBe(true);
+  });
+});
+
+describe('buildGraph - syn_range.dgm (list ranges became one node named y1-y3)', () => {
+  const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_range.dgm'), 'utf8')));
+
+  it('gives one BY edge per indicator, each with its estimate', () => {
+    const by = graph.edges.filter((e) => e.kind === 'BY');
+    expect(by.map((e) => e.id).sort()).toEqual([
+      'BY:fg->g1', 'BY:fg->g2', 'BY:fg->g3', 'BY:fg->g4',
+      'BY:fh->h1', 'BY:fh->h2', 'BY:fh->h3', 'BY:fh->h4',
+    ]);
+    for (const e of by) expect(e.unstd, e.id).not.toBeNull();
+    expect(by.find((e) => e.id === 'BY:fg->g2')!.free).toBe(true);
+    expect(by.filter((e) => e.constraint === 'lh').map((e) => e.to).sort()).toEqual(['h2', 'h3', 'h4']);
+  });
+
+  it('expands latent ranges on both sides of ON, and synthesizes no fallback ON edges', () => {
+    const on = graph.edges.filter((e) => e.kind === 'ON');
+    expect(on.map((e) => e.id).sort()).toEqual(
+      ['ON:fg->t2', 'ON:fh->t2', 'ON:t1->fg', 'ON:t1->fh'],
+    );
+    for (const e of on) expect(e.unstd, e.id).not.toBeNull();
+  });
+
+  it('builds nodes from the expanded USEVARIABLES range `g1-t2` (no node g1-t2, none for the unused e1)', () => {
+    expect(graph.nodes.map((n) => n.id).sort()).toEqual(
+      ['fg', 'fh', 'g1', 'g2', 'g3', 'g4', 'h1', 'h2', 'h3', 'h4', 't1', 't2'],
+    );
+  });
+});
+
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 
 describe('buildGraph - corpus invariants', () => {
