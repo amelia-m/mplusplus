@@ -264,8 +264,9 @@ function splitStatement(flat: string): SplitStmt {
  * (`*`, `*<start>`, `@<value>`, `(label)`) attach to the preceding name,
  * whether glued on (`y2*0.8`) or written as their own token (`y2 @1`).
  * A number written as its own token directly after a valueless `*` or `@`
- * (`y2@ 1`, `y2 * 0.8`) is that modifier's value: Mplus variable names start
- * with a letter, so such a token is never a variable.
+ * (`y2@ 1`, `y2 * 0.8`) is that modifier's value. Mplus variable names start
+ * with a letter, so a number token is never a variable: one with no
+ * modifier waiting for it (`y2* (lab) 0.8`) is dropped, not made a term.
  */
 function parseTermList(s: string): ModelTerm[] {
   const tokens = tokenizeTerms(s);
@@ -285,9 +286,13 @@ function parseTermList(s: string): ModelTerm[] {
     const m = /^([^*@]*)(.*)$/.exec(tok)!;
     const name = m[1];
     const modifiers = m[2];
-    if (current && pending && MODIFIER_VALUE_RE.test(name)) {
-      setModifier(current, pending, name);
-      pending = applyModifiers(current, modifiers);
+    if (MODIFIER_VALUE_RE.test(name)) {
+      if (current && pending) {
+        setModifier(current, pending, name);
+        pending = applyModifiers(current, modifiers);
+      } else {
+        pending = null;
+      }
       continue;
     }
     if (!name) {

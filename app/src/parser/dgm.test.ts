@@ -296,6 +296,13 @@ describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => 
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
   });
 
+  it('does not read a statement-shaped line under `MODEL CONSTRAINT:` as a model statement', () => {
+    // Unlike `NEW(a*0.5)`, `y2 ON y1` parses as a statement, so only the
+    // section bound keeps it out.
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\ny2 ON y1;');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
   it('stops at a later top-level command such as `OUTPUT:`', () => {
     const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nOUTPUT:\nf ON y1;');
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
@@ -344,9 +351,9 @@ describe('parseDgm - spaced modifier values (F1.4, F1.5)', () => {
     expect(rhs[1].fixed).toBeCloseTo(0.001, 12);
   });
 
-  it('a `(label)` closes a valueless modifier: the number after it is not the start value', () => {
+  it('a `(label)` closes a valueless modifier: the number after it is neither the start value nor a variable (phantom node `0.8`)', () => {
     const rhs = byTerms('f BY y1 y2* (lab) 0.8 y3;');
-    expect(rhs[1].name).toBe('y2');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
     expect(rhs[1].constraint).toBe('lab');
     expect(rhs[1].start).toBeNull();
   });
