@@ -37,8 +37,9 @@
  *     gesture, with the token that owned it) and returns an unsubscribe
  *     function. UI that defers work while a control is live (for example
  *     rebuilding a panel) can use it. Every listener runs even if an
- *     earlier one throws; the error is rethrown after the last listener,
- *     with the gesture already ended.
+ *     earlier one throws. Listener errors are reported (`reportError`, or
+ *     `console.error`), never thrown, so `endGesture` and
+ *     `endActiveGesture` do not throw.
  *   - Undo or redo while a gesture is active is not supported; use
  *     `undoHistory` / `redoHistory` in `history.ts`, which refuse it.
  *
@@ -115,19 +116,28 @@ function finish(g: ActiveGesture): void {
     t.setState({ pastStates: past.slice(-HISTORY_LIMIT), futureStates: [] });
   }
   // Every listener runs even if one throws, so a failing listener cannot
-  // keep another from releasing what it holds (a slider's token, say). The
-  // gesture is already over; the first error is rethrown afterwards, or an
-  // AggregateError when several listeners threw.
-  const errors: unknown[] = [];
+  // keep another from releasing what it holds (a slider's token, say). Errors
+  // are reported, not thrown: ending a gesture is cleanup, called from drag
+  // ends, cancel paths and file loads, and a throw there would abort the
+  // caller's own cleanup (a drag session left half-finished, a load that
+  // never reaches `temporal.clear()`).
   for (const fn of [...endListeners]) {
     try {
       fn(g.token);
     } catch (err) {
-      errors.push(err);
+      reportListenerError(err);
     }
   }
-  if (errors.length === 1) throw errors[0];
-  if (errors.length > 1) throw new AggregateError(errors, 'gesture-end listeners threw');
+}
+
+/**
+ * Report an error without throwing: `reportError` in the browser (logged and
+ * dispatched like an uncaught error), `console.error` where it is missing.
+ */
+function reportListenerError(err: unknown): void {
+  const report = (globalThis as { reportError?: (e: unknown) => void }).reportError;
+  if (typeof report === 'function') report(err);
+  else console.error(err);
 }
 
 export function isGestureActive(): boolean {

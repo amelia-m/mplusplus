@@ -44,36 +44,6 @@ export function dragStartAction(
 }
 
 /**
- * A 2D affine matrix as SVG's `getScreenCTM()` reports it, mapping a local
- * point to the screen: `x' = a x + c y + e`, `y' = b x + d y + f`.
- */
-export interface AffineMatrix {
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-  e: number;
-  f: number;
-}
-
-/**
- * A client (screen) point in the local space of an element whose screen
- * CTM is `screenCtm`: the same mapping d3's `pointer()` applies to give
- * drag events their `x` / `y`. With no matrix, or a singular one, the client
- * point is returned unchanged (d3 likewise uses page coordinates when the
- * container is not an SVG element).
- */
-export function clientToLocal(client: Point, screenCtm: AffineMatrix | null): Point {
-  if (!screenCtm) return client;
-  const { a, b, c, d, e, f } = screenCtm;
-  const det = a * d - b * c;
-  if (det === 0) return client;
-  const x = client.x - e;
-  const y = client.y - f;
-  return { x: (d * x - c * y) / det, y: (a * y - b * x) / det };
-}
-
-/**
  * New positions for a group drag: every node moves by the pointer's travel
  * since `pointerStart` (`drag.ts` passes the press point, mapped into the
  * container's space as it is when the drag begins), so the nodes keep

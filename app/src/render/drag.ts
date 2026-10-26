@@ -6,17 +6,15 @@
  * are pure functions in `interaction.ts`.
  */
 import { drag, type D3DragEvent, type DragBehavior } from 'd3-drag';
-import { select } from 'd3-selection';
+import { pointer, select } from 'd3-selection';
 import type { Point } from '../layout/index.js';
 import type { GroupSelection } from './svg.js';
 import { useStore, type NodePosition } from '../state/store.js';
 import { beginGesture, endGesture, type GestureToken } from '../state/gesture.js';
 import {
-  clientToLocal,
   dragShouldMove,
   dragStartAction,
   groupDragPositions,
-  type AffineMatrix,
   type DragPointerId,
 } from './interaction.js';
 
@@ -40,16 +38,16 @@ interface DragSession {
   /**
    * The press point in the container's coordinate space (the space of d3's
    * `event.x/y`), or `null` until the drag begins. It is mapped from
-   * `clientStart` at the first threshold crossing, through the container's
-   * screen CTM as it is then, not taken from the press event: a viewBox
+   * `press` at the first threshold crossing, with d3's `pointer()` and the
+   * container's screen CTM as it is then, not at the press: a viewBox
    * refit between press and crossing (after an undo, say) changes that
    * mapping, and a press point kept in the old one would make the nodes
    * jump. The nodes move by the full pointer travel since the press, so the
    * grab offset holds. Non-null exactly when the drag has begun.
    */
   pointerStart: Point | null;
-  /** Press point in client coordinates, for the click threshold and `pointerStart`. */
-  clientStart: Point;
+  /** The press, for the click threshold and `pointerStart`. */
+  press: PointerSample;
   /** The element d3-drag measures `event.x/y` in: the node's parent. */
   container: ParentNode | null;
   /**
@@ -94,24 +92,39 @@ export function cancelNodeDrag(): void {
   finishSession();
 }
 
-/** The screen CTM of `el` (an SVG element), or null when it has none. */
-function screenCtm(el: unknown): AffineMatrix | null {
-  const g = el as { getScreenCTM?: () => AffineMatrix | null } | null;
-  return typeof g?.getScreenCTM === 'function' ? g.getScreenCTM() : null;
+/** The coordinates of a mouse event or touch that d3's `pointer()` reads. */
+interface PointerSample {
+  clientX: number;
+  clientY: number;
+  pageX: number;
+  pageY: number;
 }
 
-/** The pointer's client position for a d3-drag event (mouse or touch). */
-function clientPoint(event: NodeDragEvent): Point | null {
+/**
+ * A pointer sample in the container's coordinate space, mapped with d3's own
+ * `pointer()`: d3-drag computes `event.x/y` the same way, so a drag that
+ * returns to its press point moves the nodes back exactly (a hand-written
+ * inverse of the screen CTM differed in the last bits).
+ */
+function toContainer(sample: PointerSample, container: ParentNode | null): Point {
+  const [x, y] = pointer(sample, container as Element | null);
+  return { x, y };
+}
+
+/** The pointer's coordinates for a d3-drag event (mouse or touch), copied. */
+function pointerSample(event: NodeDragEvent): PointerSample | null {
   const src = event.sourceEvent as MouseEvent | TouchEvent | null | undefined;
   if (!src) return null;
+  let p: PointerSample | undefined;
   if ('changedTouches' in src) {
-    for (const t of Array.from(src.changedTouches)) {
-      if (t.identifier === event.identifier) return { x: t.clientX, y: t.clientY };
-    }
-    return null;
+    p = Array.from(src.changedTouches).find((t) => t.identifier === event.identifier);
+  } else {
+    p = src;
   }
-  return { x: src.clientX, y: src.clientY };
+  return p ? { clientX: p.clientX, clientY: p.clientY, pageX: p.pageX, pageY: p.pageY } : null;
 }
+
+const clientOf = (p: PointerSample): Point => ({ x: p.clientX, y: p.clientY });
 
 function onStart(this: SVGGElement, event: NodeDragEvent): void {
   const pointer = event.identifier as DragPointerId;
@@ -121,8 +134,8 @@ function onStart(this: SVGGElement, event: NodeDragEvent): void {
     const stale = finishSession();
     if (stale?.pointerStart) redraw();
   }
-  const clientStart = clientPoint(event);
-  if (!clientStart) return;
+  const press = pointerSample(event);
+  if (!press) return;
 
   const { selection } = useStore.getState();
   const id = event.subject.id;
@@ -139,7 +152,7 @@ function onStart(this: SVGGElement, event: NodeDragEvent): void {
     ids,
     starts: new Map(),
     pointerStart: null,
-    clientStart,
+    press,
     container: this.parentNode,
     gesture: null,
     detach() {
@@ -155,14 +168,14 @@ function onDrag(event: NodeDragEvent): void {
   try {
     let origin = s.pointerStart;
     if (!origin) {
-      const now = clientPoint(event);
-      if (!now || !dragShouldMove(s.clientStart, now, false)) return;
+      const now = pointerSample(event);
+      if (!now || !dragShouldMove(clientOf(s.press), clientOf(now), false)) return;
       const { positions } = useStore.getState();
       for (const nid of s.ids) {
         const p = positions[nid];
         if (p) s.starts.set(nid, p);
       }
-      origin = clientToLocal(s.clientStart, screenCtm(s.container));
+      origin = toContainer(s.press, s.container);
       s.pointerStart = origin;
       s.gesture = beginGesture();
     }

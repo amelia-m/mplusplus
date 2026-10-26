@@ -11,7 +11,7 @@ import { select } from 'd3-selection';
 import { cancelNodeDrag, wireNodeDrag } from './drag.js';
 import type { GroupSelection } from './svg.js';
 import { useStore, type NodePosition } from '../state/store.js';
-import { endActiveGesture, isGestureActive } from '../state/gesture.js';
+import { endActiveGesture, isGestureActive, onGestureEnd } from '../state/gesture.js';
 
 const temporal = (useStore as unknown as {
   temporal: { getState(): { pastStates: unknown[]; undo(): void; clear(): void } };
@@ -228,6 +228,44 @@ describe('drag start positions and pointer origin are read at the threshold, not
     expect(130 - screenX(useStore.getState().positions.a.x)).toBe(grabOffset);
     touch(node, 'touchend', 4, 130, 100);
     expect(isGestureActive()).toBe(false);
+  });
+
+  it('a drag back to its press point under a fitted viewBox is a no-op (the origin drifted from d3 in the last bits)', () => {
+    const container = new FakeContainer();
+    container.ctm = new FakeMatrix(0.73, 0, 0, 0.73, 41.3, 12.7);
+    node = new FakeNode('a', container);
+    group = fakeGroup([node]);
+    wireNodeDrag(group, redraw);
+    touch(node, 'touchstart', 8, 357, 211);
+    touch(node, 'touchmove', 8, 400, 230);
+    touch(node, 'touchmove', 8, 357, 211);
+    touch(node, 'touchend', 8, 357, 211);
+    expect(useStore.getState().positions.a).toEqual(pos(10));
+    expect(temporal.getState().pastStates.length).toBe(0);
+  });
+});
+
+describe('a throwing gesture-end listener (review 2026-10-22)', () => {
+  it('neither kills the next drag by the same pointer nor makes cancelNodeDrag throw', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const off = onGestureEnd(() => {
+      throw new Error('listener boom');
+    });
+    try {
+      wireNodeDrag(group, redraw);
+      touch(node, 'touchstart', 9, 100, 100);
+      touch(node, 'touchmove', 9, 120, 100); // a at 30, gesture open
+      // The end was missed; the same pointer presses again and replaces it.
+      touch(node, 'touchstart', 9, 100, 100);
+      touch(node, 'touchmove', 9, 150, 100);
+      expect(useStore.getState().positions.a.x).toBe(80);
+      expect(() => cancelNodeDrag()).not.toThrow();
+      expect(isGestureActive()).toBe(false);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      off();
+      errorSpy.mockRestore();
+    }
   });
 });
 

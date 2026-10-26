@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLICK_THRESHOLD_PX,
-  clientToLocal,
   dragShouldMove,
   dragStartAction,
   exceedsClickThreshold,
@@ -136,21 +135,5 @@ describe('dragStartAction (R3, R4)', () => {
     expect(dragStartAction(4, 5)).toBe('ignore');
     expect(dragStartAction(4, 'mouse')).toBe('ignore');
     expect(dragStartAction('mouse', 0)).toBe('ignore');
-  });
-});
-
-describe('clientToLocal (F2.3)', () => {
-  it('maps a client point through the inverse of a screen CTM', () => {
-    // screen = 2 * local + (30, -10)
-    const ctm = { a: 2, b: 0, c: 0, d: 2, e: 30, f: -10 };
-    expect(clientToLocal({ x: 110, y: 90 }, ctm)).toEqual({ x: 40, y: 50 });
-    // A rotation by 90 degrees: screen = (-ly, lx).
-    const rot = { a: 0, b: 1, c: -1, d: 0, e: 0, f: 0 };
-    expect(clientToLocal({ x: -5, y: 3 }, rot)).toEqual({ x: 3, y: 5 });
-  });
-
-  it('returns the client point unchanged when there is no usable mapping', () => {
-    expect(clientToLocal({ x: 7, y: 8 }, null)).toEqual({ x: 7, y: 8 });
-    expect(clientToLocal({ x: 7, y: 8 }, { a: 0, b: 0, c: 0, d: 0, e: 1, f: 1 })).toEqual({ x: 7, y: 8 });
   });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HISTORY_LIMIT, historyEqual, historySlice, useStore, type NodePosition } from './store.js';
 import { beginGesture, endActiveGesture, endGesture, isGestureActive, onGestureEnd } from './gesture.js';
 import { redoHistory, undoHistory } from './history.js';
@@ -143,12 +143,17 @@ describe('undo gestures (Y1)', () => {
       throw new Error('listener boom');
     });
     const offB = onGestureEnd(() => seen.push('b'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      expect(() => endGesture(beginGesture())).toThrow('listener boom');
+      // Reported, not thrown: a throw aborted callers' cleanup (a drag left
+      // dead after re-press, a file load stopped before temporal.clear()).
+      expect(() => endGesture(beginGesture())).not.toThrow();
+      expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'listener boom' }));
       expect(seen).toEqual(['a', 'b']);
       expect(isGestureActive()).toBe(false);
       expect(temporal.getState().isTracking).toBe(true);
     } finally {
+      errorSpy.mockRestore();
       offA();
       offB();
     }
