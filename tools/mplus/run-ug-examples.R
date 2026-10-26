@@ -143,20 +143,64 @@ command_lines <- function(code, header_re) {
   start:end
 }
 
-# File names given by FILE IS / FILE = / FILE ARE statements on these lines.
-file_names <- function(lines) {
-  hits <- regmatches(lines, regexpr("(?i)FILE\\s*(IS|=|ARE)?\\s*[^;]+;", lines, perl = TRUE))
-  found <- trimws(sub("(?i)^FILE\\s*(IS|=|ARE)?\\s*", "", sub(";$", "", hits), perl = TRUE))
-  gsub('"', "", found)
+# TRUE for a bare file name: no folder part, so a copy stays inside run_dir
+# and can never resolve to the source file itself.
+is_bare_name <- function(name) {
+  grepl("^[A-Za-z0-9_][A-Za-z0-9_.-]*$", name) && !name %in% c(".", "..")
 }
 
 # Copy one file from the example inputs into the run folder, checked, since
 # file.copy can fail without an error.
 copy_input <- function(name) {
+  if (!is_bare_name(name)) {
+    stop("refusing to copy a data file name with a folder part: ", name, call. = FALSE)
+  }
   to <- file.path(run_dir, name)
-  dir.create(dirname(to), recursive = TRUE, showWarnings = FALSE)
   ok <- file.copy(file.path(src_dir, name), to, overwrite = TRUE)
   if (!ok || !file.exists(to)) stop("copy failed: ", name, call. = FALSE)
+}
+
+# Every file in src_dir that the input names anywhere outside comments (DATA
+# FILE, MONTECARLO POPULATION / COVERAGE, SWMATRIX and so on): any token that
+# is the name of a file there. Names with spaces are not supported.
+named_files <- function(code, src_dir) {
+  tokens <- unlist(strsplit(gsub('"', " ", code), "[[:space:]=;,]+"))
+  tokens <- unique(tokens[nzchar(tokens) & vapply(tokens, is_bare_name, logical(1))])
+  tokens[file.exists(file.path(src_dir, tokens)) & !dir.exists(file.path(src_dir, tokens))]
+}
+
+# The file names listed in `path`, one per line (an imputation list, a
+# replication list, a SWMATRIX list), or NULL when it is not such a list.
+listed_files <- function(path) {
+  entry_re <- "^[A-Za-z0-9_][A-Za-z0-9_.-]*\\.[A-Za-z0-9]+$"
+  # A data file is recognised from its first line without reading it all.
+  first <- trimws(gsub('"', "", readLines(path, n = 1, warn = FALSE)))
+  if (length(first) == 0 || !grepl(entry_re, first) || !grepl("[A-Za-z]", first)) return(NULL)
+  lines <- trimws(gsub('"', "", readLines(path, warn = FALSE)))
+  lines <- lines[nzchar(lines)]
+  if (all(grepl(entry_re, lines) & grepl("[A-Za-z]", lines))) lines else NULL
+}
+
+# All files to copy for one input: the files it names, and the entries of any
+# of those that is a list of files (recursively). Stops when a list names a
+# file that is missing from src_dir, which Mplus would fail on.
+files_to_copy <- function(code, src_dir) {
+  queue <- named_files(code, src_dir)
+  done <- character()
+  while (length(queue) > 0) {
+    name <- queue[1]
+    queue <- queue[-1]
+    if (name %in% done) next
+    done <- c(done, name)
+    listed <- listed_files(file.path(src_dir, name))
+    missing <- listed[!file.exists(file.path(src_dir, listed))]
+    if (length(missing) > 0) {
+      stop("files listed in ", name, " not found in ", src_dir, ": ",
+           paste(missing, collapse = ", "), call. = FALSE)
+    }
+    queue <- c(queue, listed)
+  }
+  done
 }
 
 # --- Prepare the copies ------------------------------------------------------
@@ -175,29 +219,13 @@ for (i in seq_along(examples)) {
   txt <- readLines(inp_src[i], warn = FALSE)
   code <- sub("!.*$", "", txt)
 
-  # Copy every data file the input names (FILE IS / FILE = ...).
-  for (name in file_names(txt)) {
-    if (file.exists(file.path(src_dir, name))) copy_input(name)
-  }
+  # Copy every file the input names, and the files any list among them names.
+  for (name in files_to_copy(code, src_dir)) copy_input(name)
 
-  # With TYPE = IMPUTATION the DATA file is a list of data files, one per
-  # line: copy each file it lists as well.
-  data_code <- code[command_lines(code, "(?i)^\\s*DATA\\s*:")]
-  if (any(grepl("(?i)\\bTYPE\\s*(IS|=|ARE)?\\s*IMPUTATION\\b", data_code, perl = TRUE))) {
-    for (list_name in file_names(data_code)) {
-      list_path <- file.path(src_dir, list_name)
-      if (!file.exists(list_path)) {
-        stop(ex, ": imputation list not found: ", list_path, call. = FALSE)
-      }
-      listed <- trimws(gsub('"', "", readLines(list_path, warn = FALSE)))
-      for (name in listed[listed != ""]) {
-        if (!file.exists(file.path(src_dir, name))) {
-          stop(ex, ": data file listed in ", list_name, " not found: ", name,
-               call. = FALSE)
-        }
-        copy_input(name)
-      }
-    }
+  # Outputs of an earlier run would pass for this run's in the summary.
+  for (ext in c(".out", ".dgm")) {
+    old <- file.path(run_dir, paste0(ex, ext))
+    if (file.exists(old) && !file.remove(old)) stop("could not remove ", old, call. = FALSE)
   }
 
   # Add STANDARDIZED to OUTPUT (create the command if absent), unless OUTPUT
@@ -217,12 +245,16 @@ for (i in seq_along(examples)) {
 }
 
 # Run only the examples given, not every .inp left in run_dir. The pattern
-# matches a whole file name whether runModels tests the name or a full path.
+# matches a whole file name whether runModels tests the name or a full path,
+# ignoring case as Windows file names do (an earlier run's `ex5.1.inp` keeps
+# its spelling when `EX5.1` is written over it); runModels greps with perl.
 filefilter <- paste0(
-  "(^|[/\\\\])(", paste(gsub("\\.", "\\\\.", examples), collapse = "|"), ")\\.inp$"
+  "(?i)(^|[/\\\\])(", paste(gsub("\\.", "\\\\.", examples), collapse = "|"), ")\\.inp$"
 )
+# killOnFail = FALSE: on failure MplusAutomation would otherwise run
+# `taskkill /f /im mplus.exe`, killing every Mplus process on the machine.
 runModels(run_dir, filefilter = filefilter, Mplus_command = wrapper,
-          showOutput = FALSE, replaceOutfile = "always",
+          showOutput = FALSE, replaceOutfile = "always", killOnFail = FALSE,
           logFile = file.path(run_dir, "runModels.log"), quiet = TRUE)
 
 for (ex in examples) {
