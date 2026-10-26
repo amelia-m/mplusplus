@@ -473,3 +473,26 @@ describe('parseDgm - list ranges (y1-y3 kept as one node name)', () => {
     expect(names(by.rhs)).toEqual(['y3-y1', 'y1-y9', 'y3-f']);
   });
 });
+
+// syn_cint.dgm: the syn_sem model and data, run with `OUTPUT: CINTERVAL`
+// (Mplus 8.11), which adds the 95% limits to every numeric row.
+describe('parseDgm - rows with confidence limits (CINTERVAL rows were dropped)', () => {
+  const read = (name: string) => parseDgm(readFileSync(join(DGM_DIR, name), 'utf8')).estimates;
+
+  it('reads the same estimates as the run without CINTERVAL, plus the limits', () => {
+    const cint = read('syn_cint.dgm');
+    const plain = read('syn_sem.dgm');
+    const strip = (rows: typeof cint) => rows.map(({ ci: _ci, ...rest }) => rest);
+    expect(strip(cint)).toEqual(strip(plain));
+    expect(plain.every((r) => r.ci === null)).toBe(true);
+    for (const r of cint) expect(r.ci === null, `${r.code} ${r.from} ${r.to}`).toBe(r.code === 91);
+  });
+
+  it('reads the limits of an edge row and of a variance row', () => {
+    const cint = read('syn_cint.dgm');
+    const loading = cint.find((r) => r.code === 1 && r.from === 'fa' && r.to === 'a1');
+    expect(loading).toMatchObject({ value: 0.805, se: 0.044, ci: { lower: 0.719, upper: 0.891 } });
+    const residual = cint.find((r) => r.code === 4 && r.from === 'a1');
+    expect(residual).toMatchObject({ to: null, value: 0.489, se: 0.045, ci: { lower: 0.4, upper: 0.577 } });
+  });
+});

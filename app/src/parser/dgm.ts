@@ -54,6 +54,11 @@ export interface EstimateRow {
   value: number | null;
   /** Standard error. `null` for constraint-label rows. */
   se: number | null;
+  /**
+   * 95% confidence limits (the `.out`'s Lower 2.5% and Upper 2.5%), present
+   * when the model was run with `OUTPUT: CINTERVAL`; otherwise `null`.
+   */
+  ci: { lower: number; upper: number } | null;
   /** Constraint label, only set for code 91 rows. */
   constraintLabel: string | null;
 }
@@ -649,32 +654,31 @@ function parseEstimateRow(line: string): EstimateRow | null {
       to: tokens[3],
       value: null,
       se: null,
+      ci: null,
       constraintLabel: tokens.slice(4).join(' '),
     };
   }
 
-  // Otherwise, the trailing tokens are numeric. There are two layouts:
-  //   <code> <group> <from> <to> <est> <se>      (6 tokens, est-style)
-  //   <code> <group> <var>          <est> <se>   (5 tokens, residual/var-style)
-  if (tokens.length === 6 && NUM_RE.test(tokens[4]) && NUM_RE.test(tokens[5])) {
+  // Otherwise one or two names, then the estimate and SE, then (with
+  // `OUTPUT: CINTERVAL`) the lower and upper 95% limits:
+  //   <code> <group> <from> <to> <est> <se> [<lower> <upper>]   (edge rows)
+  //   <code> <group> <var>       <est> <se> [<lower> <upper>]   (variance rows)
+  // Checked against Mplus 8.11 output (`dgm/syn_cint.dgm`).
+  const numbers = (from: number): number[] | null =>
+    tokens.slice(from).every((t) => NUM_RE.test(t)) ? tokens.slice(from).map(Number) : null;
+  for (const names of [2, 1]) {
+    const nums = numbers(2 + names);
+    if (!nums || (nums.length !== 2 && nums.length !== 4)) continue;
+    // A name is never numeric, so a variance row cannot pass as an edge row.
+    if (names === 2 && NUM_RE.test(tokens[3])) continue;
     return {
       code,
       group,
       from: tokens[2],
-      to: tokens[3],
-      value: Number(tokens[4]),
-      se: Number(tokens[5]),
-      constraintLabel: null,
-    };
-  }
-  if (tokens.length === 5 && NUM_RE.test(tokens[3]) && NUM_RE.test(tokens[4])) {
-    return {
-      code,
-      group,
-      from: tokens[2],
-      to: null,
-      value: Number(tokens[3]),
-      se: Number(tokens[4]),
+      to: names === 2 ? tokens[3] : null,
+      value: nums[0],
+      se: nums[1],
+      ci: nums.length === 4 ? { lower: nums[2], upper: nums[3] } : null,
       constraintLabel: null,
     };
   }
