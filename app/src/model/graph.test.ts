@@ -271,10 +271,12 @@ describe('buildGraph - estimate rows prefer an edge of the matching type (F1.1)'
     expect(w?.stdyx).toBeNull();
   });
 
-  it('a directed row with only an exactly matching WITH edge still lands on it', () => {
-    const g = synthGraph('f BY y1 y2 y3;\ny2 WITH y1;', ['1 1 y2 y1 0.500 0.100']);
-    expect(g.edges.find((e) => e.id === 'WITH:y2->y1')?.unstd?.value).toBeCloseTo(0.5, 3);
-    expect(g.edges.filter((e) => e.kind === 'ON')).toEqual([]);
+  it('a directed row next to a WITH pair gives the same ON edge whichever way the WITH was written (it landed on `y2 WITH y1`)', () => {
+    for (const decl of ['y2 WITH y1;', 'y1 WITH y2;']) {
+      const g = synthGraph(`f BY y1 y2 y3;\n${decl}`, ['1 1 y2 y1 0.500 0.100']);
+      expect(g.edges.find((e) => e.id === 'ON:y2->y1')?.unstd?.value, decl).toBeCloseTo(0.5, 3);
+      expect(g.edges.find((e) => e.kind === 'WITH')?.unstd, decl).toBeNull();
+    }
   });
 
   it('a covariance row (codes 2, 12, 22, 32) prefers a reversed WITH edge over an exact ON edge', () => {
@@ -282,7 +284,15 @@ describe('buildGraph - estimate rows prefer an edge of the matching type (F1.1)'
     for (const code of [2, 12, 22, 32]) {
       expect(matchEdgeForRow(code, 'y1', 'y2', edges)?.id, `code ${code}`).toBe('WITH:y2->y1');
     }
-    // Other non-directed codes keep the plain order: exact endpoints first.
+    // A label row (91) has no parameter type: exact endpoints first.
     expect(matchEdgeForRow(91, 'y1', 'y2', edges)?.id).toBe('ON:y1->y2');
+  });
+
+  it('a covariance row next to an ON edge gives a COVAR edge in either row order (it was absorbed by `ON:y1->y2`)', () => {
+    for (const row of ['2 1 y1 y2 0.100 0.020', '2 1 y2 y1 0.100 0.020', '12 1 y1 y2 0.300 0.050']) {
+      const g = synthGraph('f BY y1 y2 y3;\ny2 ON y1;', [row]);
+      expect(g.edges.filter((e) => e.kind === 'COVAR'), row).toHaveLength(1);
+      expect(g.edges.filter((e) => e.kind === 'ON').map((e) => e.id), row).toEqual(['ON:y1->y2']);
+    }
   });
 });

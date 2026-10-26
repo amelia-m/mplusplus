@@ -195,13 +195,15 @@ const DIRECTED_KINDS: ReadonlySet<EdgeKind> = new Set<EdgeKind>(['BY', 'ON']);
  * `to` describes, or `null` if none does.
  *
  * BY edges go latent->indicator and ON edges predictor->dependent, so the
- * table's `from`/`to` already match both. A row first looks for an edge of
- * its own type: a directed row (loading or regression) for a BY/ON edge with
- * exactly its endpoints, a covariance row for a WITH/COVAR edge in either
- * order. Only then does it fall back to any edge with exactly its endpoints
- * and, for a non-directed row, a symmetric edge in the reversed order. A
- * directed row never matches a reversed covariance: it has a direction of
- * its own and must not be absorbed by a covariance between the same pair.
+ * table's `from`/`to` already match both. A row with a parameter type
+ * matches only edges of that type: a directed row (loading or regression)
+ * only a BY/ON edge with exactly its endpoints, a covariance row only a
+ * WITH/COVAR edge, in either order (a symmetric edge keeps the orientation
+ * of its first declaration, which says nothing about the row). Otherwise a
+ * regression would be absorbed by a covariance between the same pair, or
+ * the reverse, depending only on how the syntax was written. A row of no
+ * fixed type (a code-91 label, which can name any parameter) takes any edge
+ * with exactly its endpoints, then a symmetric edge in the reversed order.
  */
 export function matchEdgeForRow(
   code: number,
@@ -216,21 +218,13 @@ export function matchEdgeForRow(
   const reversedSymmetric = (e: GraphEdge): boolean =>
     isSymmetricKind(e.kind) && e.from === t && e.to === f;
 
-  const directed = DIRECTED_CODES.has(code);
-  const passes: ((e: GraphEdge) => boolean)[] = [];
-  if (directed) {
-    passes.push((e) => DIRECTED_KINDS.has(e.kind) && exact(e));
-  } else if (COVARIANCE_CODES.has(code)) {
-    passes.push((e) => isSymmetricKind(e.kind) && (exact(e) || reversedSymmetric(e)));
+  if (DIRECTED_CODES.has(code)) {
+    return all.find((e) => DIRECTED_KINDS.has(e.kind) && exact(e)) ?? null;
   }
-  passes.push(exact);
-  if (!directed) passes.push(reversedSymmetric);
-
-  for (const pass of passes) {
-    const hit = all.find(pass);
-    if (hit) return hit;
+  if (COVARIANCE_CODES.has(code)) {
+    return all.find((e) => isSymmetricKind(e.kind) && (exact(e) || reversedSymmetric(e))) ?? null;
   }
-  return null;
+  return all.find(exact) ?? all.find(reversedSymmetric) ?? null;
 }
 
 function attachEstimates(
@@ -240,12 +234,12 @@ function attachEstimates(
 ): void {
   for (const row of rows) {
     if (row.to == null) continue; // residual / variance row, not an edge
-    // Estimate-only edges (e.g. covariance code 2 between observed vars that
-    // wasn't declared `WITH` in the syntax) are synthesized: COVAR for code
-    // 2, ON for anything else.
+    // Estimate-only edges (e.g. a covariance between observed vars that
+    // wasn't declared `WITH` in the syntax) are synthesized: COVAR for a
+    // covariance code, ON for anything else.
     const edge =
       matchEdgeForRow(row.code, row.from, row.to, edges.values()) ??
-      upsert(row.code === 2 ? 'COVAR' : 'ON', row.from, row.to);
+      upsert(COVARIANCE_CODES.has(row.code) ? 'COVAR' : 'ON', row.from, row.to);
 
     if (row.code === 91) {
       if (row.constraintLabel) edge.constraint = row.constraintLabel;
