@@ -8,9 +8,10 @@ import type { DgmFile, EstimateRow, ModelStmt, ModelTerm } from '../parser/dgm.j
  *
  * Estimate rows from the DGM table that name two variables are matched to
  * edges by endpoints, preferring an edge of the row's own type (see
- * `matchEdgeForRow`; single-variable variance rows are skipped). A row with no matching edge synthesizes one: a code-2
- * (covariance) row becomes an undirected `COVAR` edge, and any other row
- * becomes an `ON` edge from the row's `from` to its `to`. Only codes 1
+ * `matchEdgeForRow`; single-variable variance rows are skipped). A row with
+ * no matching edge synthesizes one: a covariance row (code 2, 12, 22 or 32)
+ * becomes an undirected `COVAR` edge, and any other row becomes an `ON`
+ * edge from the row's `from` to its `to`. Only codes 1
  * (unstandardized) and 11 (STDYX) attach an estimate and SE to the edge;
  * code 91 attaches a constraint label; every other code is matched but not
  * stored.
