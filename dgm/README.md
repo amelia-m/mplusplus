@@ -12,6 +12,7 @@ The parser and graph test suites read every `.dgm` here at runtime.
 | `syn_path.dgm` | Path analysis with no latent variables: `k1`, `k2` -> `m1` -> `d1`, `d2`, plus `k3 -> d1` and `k1 -> d2` | A groupings count of 0 in the header; a declared residual covariance (`d1 WITH d2`); code-2 rows with the 999.000 sentinel for the covariances among the exogenous `k1`, `k2`, `k3`, which become COVAR edges |
 | `syn_cint.dgm` | The `syn_sem` model and data, with `OUTPUT: STANDARDIZED CINTERVAL` | Estimate rows with 95% confidence limits: 8-token edge rows and 7-token variance rows (`<est> <se> <lower 2.5%> <upper 2.5%>`); a header whose first line is 3, not 2 |
 | `syn_range.dgm` | Two factors (`fg`, `fh`) regressed on `t1`, predicting `t2` | Mplus list ranges: generated names in NAMES (`g1-g4`), a USEVARIABLES range that leaves out `e1` (`g1-t2`), a modifier on an indicator range (`g1-g4*`), a label on a range (`h2-h4 (lh)`, code-91 rows), latent ranges on both sides of ON (`fg-fh ON t1`, `t2 ON fg-fh`) |
+| `syn_label.dgm` | The `syn_sem` model and data, with equality labels on loadings (`la`), on two covariances (`c4 WITH b4 (cv); x1 WITH x2 (cv);`) and on two residual variances (`rv`) | Constraint-label rows of every seen type: 91 (loading), 92 (covariance), 94 (residual variance) |
 
 `app/test/fixtures/sample.out` is the Mplus output of the `syn_sem` model, with
 `OUTPUT: STANDARDIZED` (STDYX, STDY and STD sections).
@@ -27,7 +28,7 @@ used), in a scratch folder holding copies of those inputs:
    `syn_sem.dgm`.
 
 Do the same for `syn_twofactor`, `syn_path` and `syn_range`; `syn_cint.inp`
-reads the `syn_sem.dat` from step 1. Copy the `.dgm`
+and `syn_label.inp` read the `syn_sem.dat` from step 1. Copy the `.dgm`
 here, and `syn_sem.out` to `app/test/fixtures/sample.out`. Regenerated files
 keep the same structure; if any estimate shifts, update the spot-check values
 in the tests.

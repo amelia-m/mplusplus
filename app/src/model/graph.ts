@@ -9,12 +9,12 @@ import type { DgmFile, EstimateRow, ModelStmt, ModelTerm } from '../parser/dgm.j
  * Estimate rows from the DGM table that name two variables are matched to
  * edges by endpoints, preferring an edge of the row's own type (see
  * `matchEdgeForRow`; single-variable variance rows are skipped). A row with
- * no matching edge synthesizes one: a covariance row (code 2, 12, 22 or 32)
- * becomes an undirected `COVAR` edge, and any other row becomes an `ON`
- * edge from the row's `from` to its `to`. Only codes 1
+ * no matching edge synthesizes one: a covariance row (code 2, 12, 22, 32
+ * or 92) becomes an undirected `COVAR` edge, and any other row becomes an
+ * `ON` edge from the row's `from` to its `to`. Only codes 1
  * (unstandardized) and 11 (STDYX) attach an estimate and SE to the edge;
- * code 91 attaches a constraint label; every other code is matched but not
- * stored.
+ * label rows (91, 92) attach a constraint label; every other code is
+ * matched but not stored.
  */
 
 export type NodeKind = 'latent' | 'observed';
@@ -180,14 +180,16 @@ function walkStatement(stmt: ModelStmt, upsert: EdgeUpsert): void {
 /**
  * Estimate codes for directed parameters (loadings and regressions): the
  * codes whose last digit is 1, i.e. 1 (unstandardized), 11 (STDYX),
- * 21 (STDY) and 31 (STD). Code 91 also ends in 1 but is a constraint label
- * that can name any parameter, covariances included, so it is not treated
- * as directed.
+ * 21 (STDY) and 31 (STD), and 91, the constraint label of a loading or
+ * regression.
  */
-const DIRECTED_CODES: ReadonlySet<number> = new Set([1, 11, 21, 31]);
+const DIRECTED_CODES: ReadonlySet<number> = new Set([1, 11, 21, 31, 91]);
 
-/** Estimate codes for covariances: last digit 2, in each estimate type. */
-const COVARIANCE_CODES: ReadonlySet<number> = new Set([2, 12, 22, 32]);
+/**
+ * Codes for covariances: last digit 2, in each estimate type, and 92, the
+ * constraint label of a covariance.
+ */
+const COVARIANCE_CODES: ReadonlySet<number> = new Set([2, 12, 22, 32, 92]);
 
 const DIRECTED_KINDS: ReadonlySet<EdgeKind> = new Set<EdgeKind>(['BY', 'ON']);
 
@@ -202,9 +204,9 @@ const DIRECTED_KINDS: ReadonlySet<EdgeKind> = new Set<EdgeKind>(['BY', 'ON']);
  * WITH/COVAR edge, in either order (a symmetric edge keeps the orientation
  * of its first declaration, which says nothing about the row). Otherwise a
  * regression would be absorbed by a covariance between the same pair, or
- * the reverse, depending only on how the syntax was written. A row of no
- * fixed type (a code-91 label, which can name any parameter) takes any edge
- * with exactly its endpoints, then a symmetric edge in the reversed order.
+ * the reverse, depending only on how the syntax was written. A row of a
+ * code not known here takes any edge with exactly its endpoints, then a
+ * symmetric edge in the reversed order.
  */
 export function matchEdgeForRow(
   code: number,
@@ -242,8 +244,9 @@ function attachEstimates(
       matchEdgeForRow(row.code, row.from, row.to, edges.values()) ??
       upsert(COVARIANCE_CODES.has(row.code) ? 'COVAR' : 'ON', row.from, row.to);
 
-    if (row.code === 91) {
-      if (row.constraintLabel) edge.constraint = row.constraintLabel;
+    // A label row (91, 92) carries a label and no estimate.
+    if (row.constraintLabel !== null) {
+      edge.constraint = row.constraintLabel;
       continue;
     }
     if (row.value == null || row.se == null) continue;
