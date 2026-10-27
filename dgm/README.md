@@ -1,9 +1,11 @@
-# Synthetic `.dgm` fixtures
+# `.dgm` fixtures
 
-Every file here is synthetic: an invented model with invented variable names,
-fitted by Mplus to data that Mplus simulated (`MONTECARLO`). No research data,
-and nothing derived from the Mplus User's Guide examples, goes in this folder.
-The parser and graph test suites read every `.dgm` here at runtime.
+Most files here are synthetic: an invented model with invented variable names,
+fitted by Mplus to data that Mplus simulated (`MONTECARLO`). The rest come
+from an openly licensed (CC0) published replication package, listed under
+"Published models" below. No other research data, and nothing derived from
+the Mplus User's Guide examples, goes in this folder. The parser and graph
+test suites read every `.dgm` here at runtime.
 
 | File | Model | Covers |
 |---|---|---|
@@ -16,6 +18,24 @@ The parser and graph test suites read every `.dgm` here at runtime.
 
 `app/test/fixtures/sample.out` is the Mplus output of the `syn_sem` model, with
 `OUTPUT: STANDARDIZED` (STDYX, STDY and STD sections).
+
+## Published models
+
+From the replication package of Verkuyten et al., Journal of Experimental
+Political Science: Harvard Dataverse, doi:10.7910/DVN/BA20LQ, licensed CC0 1.0.
+Its Mplus inputs were run unchanged with Mplus 8.11 and `/diagram` on
+2026-10-22. The `.dgm` holds the input and the estimates only, not the survey
+data.
+
+| File | Model | Covers |
+|---|---|---|
+| `dc_tol_cfa_step3.dgm` | Three-factor CFA (`l_hc`, `l_oc`, `poltol`), MLR | A real researcher's input; latent variance and covariance codes 5, 15, 35 and 2, 12, 32 |
+| `dc_tol_cfaallcorrelations.dgm` | The same CFA with 20 residual covariances declared `WITH` | Many covariance rows (23 per code): 20 land on declared WITH edges, 3 undeclared factor covariances become COVAR edges |
+| `dc_tol_sem.dgm` | SEM with mediators | `OUTPUT: CINTERVAL` in a real model: every estimate row carries confidence limits (the parser read 0 rows before 2026-10-26) |
+
+To regenerate: download the package, copy its `.inp` files and
+`Tolerance2021.dat` into a scratch folder, run `Mplus <input> /diagram`, and
+copy the lower-cased `.dgm` here.
 
 ## Regenerating
 
