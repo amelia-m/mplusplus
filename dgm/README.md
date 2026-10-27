@@ -30,7 +30,7 @@ data.
 | File | Model | Covers |
 |---|---|---|
 | `dc_tol_cfa_step3.dgm` | Three-factor CFA (`l_hc`, `l_oc`, `poltol`), MLR | A real researcher's input; latent variance and covariance codes 5, 15, 35 and 2, 12, 32 |
-| `dc_tol_cfaallcorrelations.dgm` | The same CFA with 20 residual covariances declared `WITH` | Many covariance rows (23 per code): 20 land on declared WITH edges, 3 undeclared factor covariances become COVAR edges |
+| `dc_tol_cfaallcorrelations.dgm` | The same CFA, with four observed variables (`V051`, `LFT`, `OPL`, `GSL_R`) correlated `WITH` the factors and each other | Many covariance rows (23 per code): 20 land on declared WITH edges (2 residual covariances, 18 correlations), 3 undeclared factor covariances become COVAR edges; a bare variance statement (`V051;`) |
 | `dc_tol_sem.dgm` | SEM with mediators | `OUTPUT: CINTERVAL` in a real model: every estimate row carries confidence limits (the parser read 0 rows before 2026-10-26) |
 
 To regenerate: download the package, copy its `.inp` files and
