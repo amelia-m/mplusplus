@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
@@ -9,16 +9,19 @@ import { elkEngine } from './elk.js';
 const FIXTURE = resolve(__dirname, '../../../dgm/syn_sem.dgm');
 
 describe('elkEngine', () => {
-  it('lays out the syn_sem graph with finite positions', async () => {
-    const dgm = parseDgm(readFileSync(FIXTURE, 'utf8'));
-    const graph = buildGraph(dgm);
-    const result = await elkEngine.layout(graph, {
+  const graph = buildGraph(parseDgm(readFileSync(FIXTURE, 'utf8')));
+  let result: Awaited<ReturnType<typeof elkEngine.layout>>;
+
+  beforeAll(async () => {
+    result = await elkEngine.layout(graph, {
       width: 1200,
       height: 800,
       nodeWidth: 120,
       nodeHeight: 56,
     });
+  });
 
+  it('lays out the syn_sem graph with finite positions', () => {
     expect(result.nodes.length).toBe(graph.nodes.length);
     for (const n of result.nodes) {
       expect(Number.isFinite(n.x)).toBe(true);
@@ -27,16 +30,7 @@ describe('elkEngine', () => {
     expect(result.edges.length).toBe(graph.edges.length);
   });
 
-  it('produces few or zero edge crossings on syn_sem', async () => {
-    const dgm = parseDgm(readFileSync(FIXTURE, 'utf8'));
-    const graph = buildGraph(dgm);
-    const result = await elkEngine.layout(graph, {
-      width: 1200,
-      height: 800,
-      nodeWidth: 120,
-      nodeHeight: 56,
-    });
-
+  it('produces few or zero edge crossings on syn_sem', () => {
     const nodeCenters = new Map(
       result.nodes.map((n) => [n.id, { x: n.x + n.width / 2, y: n.y + n.height / 2 }]),
     );
@@ -58,8 +52,6 @@ describe('elkEngine', () => {
     // straight-line center-to-center segments here; the real renderer uses
     // ELK bend points so the visual crossing count is at most this number
     // and typically zero for this graph.
-    // eslint-disable-next-line no-console
-    console.log(`[elk] syn_sem straight-line crossings: ${crossings}`);
     expect(crossings).toBeLessThanOrEqual(3);
   });
 });
