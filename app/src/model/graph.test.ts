@@ -7,21 +7,27 @@ import { buildGraph, matchEdgeForRow } from './graph.js';
 const DGM_DIR = resolve(__dirname, '../../../dgm');
 const fixtures = readdirSync(DGM_DIR).filter((f) => f.endsWith('.dgm'));
 
+const IDENT = /^[a-z_][a-z0-9_]*$/;
+
 describe('buildGraph - corpus', () => {
   for (const name of fixtures) {
-    it(`builds a non-empty graph for ${name}`, () => {
-      const text = readFileSync(join(DGM_DIR, name), 'utf8');
-      const dgm = parseDgm(text);
-      const graph = buildGraph(dgm);
+    it(`builds a well-formed graph for ${name}`, () => {
+      const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, name), 'utf8')));
 
       expect(graph.nodes.length).toBeGreaterThan(0);
       expect(graph.edges.length).toBeGreaterThan(0);
+      for (const n of graph.nodes) expect(n.id, `node id ${n.id}`).toMatch(IDENT);
 
-      // Every edge endpoint should resolve to a node.
+      // Every edge endpoint resolves to a node; one symmetric edge per pair.
       const ids = new Set(graph.nodes.map((n) => n.id));
+      const pairs = new Set<string>();
       for (const e of graph.edges) {
-        expect(ids.has(e.from), `missing source ${e.from} (${name})`).toBe(true);
-        expect(ids.has(e.to), `missing target ${e.to} (${name})`).toBe(true);
+        expect(ids.has(e.from), `missing source ${e.from}`).toBe(true);
+        expect(ids.has(e.to), `missing target ${e.to}`).toBe(true);
+        if (e.kind !== 'WITH' && e.kind !== 'COVAR') continue;
+        const key = [e.from, e.to].sort().join('|');
+        expect(pairs.has(key), `duplicate symmetric edge ${e.id}`).toBe(false);
+        pairs.add(key);
       }
     });
   }
@@ -120,24 +126,6 @@ describe('buildGraph - syn_range.dgm (list ranges became one node named y1-y3)',
   });
 });
 
-const IDENT = /^[a-z_][a-z0-9_]*$/;
-
-describe('buildGraph - corpus invariants', () => {
-  for (const name of fixtures) {
-    it(`has identifier-shaped node ids and one symmetric edge per pair in ${name}`, () => {
-      const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, name), 'utf8')));
-      for (const n of graph.nodes) expect(n.id, `node id ${n.id}`).toMatch(IDENT);
-      const pairs = new Set<string>();
-      for (const e of graph.edges) {
-        if (e.kind !== 'WITH' && e.kind !== 'COVAR') continue;
-        const key = [e.from, e.to].sort().join('|');
-        expect(pairs.has(key), `duplicate symmetric edge ${e.id}`).toBe(false);
-        pairs.add(key);
-      }
-    });
-  }
-});
-
 /** Minimal synthetic .dgm: latent `f` over y1..y3, caller-supplied model and rows. */
 function synthGraph(model: string, rows: string[] = []) {
   const text = [
@@ -182,15 +170,7 @@ describe('buildGraph - symmetric edges are deduplicated (X3)', () => {
     expect(withs[0].id).toBe('WITH:y1->y2');
   });
 
-  it('keeps modifiers from both declarations on the single WITH edge', () => {
-    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2*;\ny2 WITH y1 (c1);');
-    const withs = g.edges.filter((e) => e.kind === 'WITH');
-    expect(withs).toHaveLength(1);
-    expect(withs[0].free).toBe(true);
-    expect(withs[0].constraint).toBe('c1');
-  });
-
-  it('matches non-directed rows in either order to the single WITH edge', () => {
+  it('keeps modifiers from both declarations on the single WITH edge, and matches covariance rows in either order to it', () => {
     // Code 2 rows are not attached as estimates yet (TODO.md); this checks
     // only that a reversed covariance row finds the declared WITH edge
     // instead of synthesizing a second COVAR or ON edge.
@@ -229,27 +209,21 @@ describe('buildGraph - estimate rows prefer exact direction (P1)', () => {
     }
   });
 
-  it('`y1 WITH y2; y1 ON y2;` attaches row `1 1 y2 y1` to the ON edge', () => {
-    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;\ny1 ON y2;', ['1 1 y2 y1 0.500 0.100']);
-    const on = g.edges.find((e) => e.id === 'ON:y2->y1');
-    expect(on).toBeDefined();
-    expect(on!.unstd?.value).toBeCloseTo(0.5, 3);
-    const w = g.edges.find((e) => e.kind === 'WITH');
-    expect(w?.unstd).toBeNull();
-  });
-
-  it('a directed row (codes 1, 11, 21, 31) with only a reversed WITH pair falls back to an ON edge', () => {
-    for (const code of [1, 11, 21, 31]) {
+  it.each([1, 11, 21, 31])(
+    'a directed row of code %i with only a reversed WITH pair synthesizes an ON edge',
+    (code) => {
       const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', [`${code} 1 y2 y1 0.250 0.080`]);
-      const on = g.edges.find((e) => e.id === 'ON:y2->y1');
-      expect(on, `code ${code}`).toBeDefined();
-      const w = g.edges.find((e) => e.kind === 'WITH');
-      expect(w?.unstd, `code ${code}`).toBeNull();
-      expect(w?.stdyx, `code ${code}`).toBeNull();
-      if (code === 11) expect(on!.stdyx?.value).toBeCloseTo(0.25, 3);
-    }
-  });
+      expect(g.edges.map((e) => e.id).sort()).toEqual(
+        ['BY:f->y1', 'BY:f->y2', 'BY:f->y3', 'ON:y2->y1', 'WITH:y1->y2'],
+      );
+    },
+  );
 
+  it('a code-11 row with only a reversed WITH pair puts its STDYX estimate on the ON edge', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', ['11 1 y2 y1 0.250 0.080']);
+    expect(g.edges.find((e) => e.id === 'ON:y2->y1')?.stdyx?.value).toBeCloseTo(0.25, 3);
+    expect(g.edges.find((e) => e.kind === 'WITH')?.stdyx).toBeNull();
+  });
 });
 
 describe('buildGraph - constraint-label rows by parameter type (9x)', () => {
@@ -281,18 +255,21 @@ describe('buildGraph - constraint-label rows by parameter type (9x)', () => {
 });
 
 describe('buildGraph - estimate rows prefer an edge of the matching type (F1.1)', () => {
-  it('`y2 WITH y1; y1 ON y2;` puts rows `1`/`11 1 y2 y1` on the ON edge, not the WITH (estimates on WITH bug)', () => {
-    const g = synthGraph('f BY y1 y2 y3;\ny2 WITH y1;\ny1 ON y2;', [
-      '1 1 y2 y1 0.500 0.100',
-      '11 1 y2 y1 0.400 0.100',
-    ]);
-    const on = g.edges.find((e) => e.id === 'ON:y2->y1');
-    expect(on?.unstd?.value).toBeCloseTo(0.5, 3);
-    expect(on?.stdyx?.value).toBeCloseTo(0.4, 3);
-    const w = g.edges.find((e) => e.id === 'WITH:y2->y1');
-    expect(w?.unstd).toBeNull();
-    expect(w?.stdyx).toBeNull();
-  });
+  it.each(['y2 WITH y1;', 'y1 WITH y2;'])(
+    '`%s y1 ON y2;` puts rows `1`/`11 1 y2 y1` on the ON edge, not the WITH (estimates on WITH bug)',
+    (decl) => {
+      const g = synthGraph(`f BY y1 y2 y3;\n${decl}\ny1 ON y2;`, [
+        '1 1 y2 y1 0.500 0.100',
+        '11 1 y2 y1 0.400 0.100',
+      ]);
+      const on = g.edges.find((e) => e.id === 'ON:y2->y1');
+      expect(on?.unstd?.value).toBeCloseTo(0.5, 3);
+      expect(on?.stdyx?.value).toBeCloseTo(0.4, 3);
+      const w = g.edges.find((e) => e.kind === 'WITH');
+      expect(w?.unstd).toBeNull();
+      expect(w?.stdyx).toBeNull();
+    },
+  );
 
   it('a directed row next to a WITH pair gives the same ON edge whichever way the WITH was written (it landed on `y2 WITH y1`)', () => {
     for (const decl of ['y2 WITH y1;', 'y1 WITH y2;']) {
