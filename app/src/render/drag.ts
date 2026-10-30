@@ -6,7 +6,7 @@
  * are pure functions in `interaction.ts`.
  */
 import { drag, type D3DragEvent, type DragBehavior } from 'd3-drag';
-import { select } from 'd3-selection';
+import { pointer, select } from 'd3-selection';
 import type { Point } from '../layout/index.js';
 import type { GroupSelection } from './svg.js';
 import { useStore, type NodePosition } from '../state/store.js';
@@ -35,12 +35,21 @@ interface DragSession {
    * and threshold (an undo, say) is not overwritten with stale positions.
    */
   starts: Map<string, NodePosition>;
-  /** Press point in the nodes' coordinate space (d3's `event.x/y`). */
-  pointerStart: Point;
-  /** Press point in client coordinates, for the click threshold. */
-  clientStart: Point;
-  /** True once the pointer crossed the click threshold and the drag began. */
-  started: boolean;
+  /**
+   * The press point in the container's coordinate space (the space of d3's
+   * `event.x/y`), or `null` until the drag begins. It is mapped from
+   * `press` at the first threshold crossing, with d3's `pointer()` and the
+   * container's screen CTM as it is then, not at the press: a viewBox
+   * refit between press and crossing (after an undo, say) changes that
+   * mapping, and a press point kept in the old one would make the nodes
+   * jump. The nodes move by the full pointer travel since the press, so the
+   * grab offset holds. Non-null exactly when the drag has begun.
+   */
+  pointerStart: Point | null;
+  /** The press, for the click threshold and `pointerStart`. */
+  press: PointerSample;
+  /** The element d3-drag measures `event.x/y` in: the node's parent. */
+  container: ParentNode | null;
   /**
    * The undo gesture this drag owns, from `beginGesture` when the drag
    * began. `null` before that, or if another gesture was already active (the
@@ -71,29 +80,62 @@ function finishSession(): DragSession | null {
   return s;
 }
 
-/** The pointer's client position for a d3-drag event (mouse or touch). */
-function clientPoint(event: NodeDragEvent): Point | null {
-  const src = event.sourceEvent as MouseEvent | TouchEvent | null | undefined;
-  if (!src) return null;
-  if ('changedTouches' in src) {
-    for (const t of Array.from(src.changedTouches)) {
-      if (t.identifier === event.identifier) return { x: t.clientX, y: t.clientY };
-    }
-    return null;
-  }
-  return { x: src.clientX, y: src.clientY };
+/**
+ * Cancel the node drag in progress, if any: detach its listeners and end
+ * the undo gesture it owns. Later events from that pointer are ignored
+ * until it is pressed again. Positions already written stay; the caller
+ * redraws. Call it before replacing the diagram (file load, Re-run layout)
+ * so a drag cannot write stale positions into the new one. A no-op when no
+ * drag is active.
+ */
+export function cancelNodeDrag(): void {
+  finishSession();
 }
 
-function onStart(event: NodeDragEvent): void {
+/** The coordinates of a mouse event or touch that d3's `pointer()` reads. */
+interface PointerSample {
+  clientX: number;
+  clientY: number;
+  pageX: number;
+  pageY: number;
+}
+
+/**
+ * A pointer sample in the container's coordinate space, mapped with d3's own
+ * `pointer()`: d3-drag computes `event.x/y` the same way, so a drag that
+ * returns to its press point moves the nodes back exactly (a hand-written
+ * inverse of the screen CTM differed in the last bits).
+ */
+function toContainer(sample: PointerSample, container: ParentNode | null): Point {
+  const [x, y] = pointer(sample, container as Element | null);
+  return { x, y };
+}
+
+/** The pointer's coordinates for a d3-drag event (mouse or touch), copied. */
+function pointerSample(event: NodeDragEvent): PointerSample | null {
+  const src = event.sourceEvent as MouseEvent | TouchEvent | null | undefined;
+  if (!src) return null;
+  let p: PointerSample | undefined;
+  if ('changedTouches' in src) {
+    p = Array.from(src.changedTouches).find((t) => t.identifier === event.identifier);
+  } else {
+    p = src;
+  }
+  return p ? { clientX: p.clientX, clientY: p.clientY, pageX: p.pageX, pageY: p.pageY } : null;
+}
+
+const clientOf = (p: PointerSample): Point => ({ x: p.clientX, y: p.clientY });
+
+function onStart(this: SVGGElement, event: NodeDragEvent): void {
   const pointer = event.identifier as DragPointerId;
   const action = dragStartAction(session ? session.pointer : null, pointer);
   if (action === 'ignore') return;
   if (action === 'replace') {
     const stale = finishSession();
-    if (stale?.started) redraw();
+    if (stale?.pointerStart) redraw();
   }
-  const clientStart = clientPoint(event);
-  if (!clientStart) return;
+  const press = pointerSample(event);
+  if (!press) return;
 
   const { selection } = useStore.getState();
   const id = event.subject.id;
@@ -101,7 +143,7 @@ function onStart(event: NodeDragEvent): void {
 
   const onCancel = (): void => {
     const s = finishSession();
-    if (s?.started) redraw();
+    if (s?.pointerStart) redraw();
   };
   window.addEventListener('pointercancel', onCancel);
   window.addEventListener('blur', onCancel);
@@ -109,9 +151,9 @@ function onStart(event: NodeDragEvent): void {
     pointer,
     ids,
     starts: new Map(),
-    pointerStart: { x: event.x, y: event.y },
-    clientStart,
-    started: false,
+    pointerStart: null,
+    press,
+    container: this.parentNode,
     gesture: null,
     detach() {
       window.removeEventListener('pointercancel', onCancel);
@@ -124,18 +166,20 @@ function onDrag(event: NodeDragEvent): void {
   const s = session;
   if (!s || event.identifier !== s.pointer) return;
   try {
-    if (!s.started) {
-      const now = clientPoint(event);
-      if (!now || !dragShouldMove(s.clientStart, now, false)) return;
-      s.started = true;
+    let origin = s.pointerStart;
+    if (!origin) {
+      const now = pointerSample(event);
+      if (!now || !dragShouldMove(clientOf(s.press), clientOf(now), false)) return;
       const { positions } = useStore.getState();
       for (const nid of s.ids) {
         const p = positions[nid];
         if (p) s.starts.set(nid, p);
       }
+      origin = toContainer(s.press, s.container);
+      s.pointerStart = origin;
       s.gesture = beginGesture();
     }
-    const updates = groupDragPositions(s.starts, s.pointerStart, { x: event.x, y: event.y });
+    const updates = groupDragPositions(s.starts, origin, { x: event.x, y: event.y });
     useStore.getState().setNodePositions(updates);
     redraw();
   } catch (err) {
@@ -148,7 +192,7 @@ function onEnd(event: NodeDragEvent): void {
   const s = session;
   if (!s || event.identifier !== s.pointer) return;
   try {
-    if (s.started) redraw();
+    if (s.pointerStart) redraw();
   } finally {
     finishSession();
   }
@@ -188,12 +232,15 @@ function nodeDragBehaviour(): DragBehavior<SVGGElement, unknown, DragSubject> {
  * Nothing moves until the pointer crosses the click threshold
  * (`dragShouldMove`), so a click with a little jitter neither moves the node
  * nor adds an undo entry. On the first crossing the drag reads the nodes'
- * start positions, begins one undo gesture (see `state/gesture.ts`) and
- * moves from the original press point, which keeps the grab offset. The
- * gesture ends on drag end, on `pointercancel` or window `blur`, if updating
- * the drag throws, and when a new drag by the same pointer starts (the old
- * end was missed). A second pointer while a drag is active (multi-touch) is
- * ignored (`dragStartAction`).
+ * start positions, maps the press point into the container's current
+ * coordinate space, begins one undo gesture (see `state/gesture.ts`) and
+ * moves the nodes by the full pointer travel since the press, which keeps
+ * the grab offset; an undo or viewBox refit between press and crossing
+ * does not make them jump. The gesture ends on drag end,
+ * on `pointercancel` or window `blur`, if updating the drag throws, when a
+ * new drag by the same pointer starts (the old end was missed), and on
+ * `cancelNodeDrag` (file load, Re-run layout). A second pointer while a
+ * drag is active (multi-touch) is ignored (`dragStartAction`).
  *
  * Safe to call on every redraw: it rebinds one shared behaviour (see
  * `nodeDragBehaviour`), so a touch drag in progress keeps going.

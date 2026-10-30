@@ -45,7 +45,9 @@ export function dragStartAction(
 
 /**
  * New positions for a group drag: every node moves by the pointer's travel
- * since the press, so each keeps its offset from the pointer (no jump).
+ * since `pointerStart` (`drag.ts` passes the press point, mapped into the
+ * container's space as it is when the drag begins), so the nodes keep
+ * their offsets from the pointer and from each other.
  */
 export function groupDragPositions(
   start: ReadonlyMap<string, Box>,
