@@ -65,7 +65,8 @@ describe('parseDgm - syn_sem.dgm specific', () => {
     const a2 = faBy!.rhs.find((t) => t.name.toLowerCase() === 'a2');
     expect(a2?.constraint).toBe('la');
     const fbBy = dgm.modelStatements.find((s) => s.op === 'BY' && s.lhs.toLowerCase() === 'fb');
-    expect(fbBy!.rhs.filter((t) => t.constraint != null).map((t) => t.constraint)).toEqual(['lb', 'lb']);
+    expect(fbBy!.rhs.filter((t) => t.constraint != null).map((t) => [t.name.toLowerCase(), t.constraint]))
+      .toEqual([['b2', 'lb'], ['b3', 'lb']]);
   });
 
   it('parses ON statements with multiple LHS tokens (x1 x2 ON fc)', () => {

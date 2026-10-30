@@ -9,10 +9,11 @@ import { elkEngine } from './elk.js';
 const FIXTURE = resolve(__dirname, '../../../dgm/syn_sem.dgm');
 
 describe('elkEngine', () => {
-  const graph = buildGraph(parseDgm(readFileSync(FIXTURE, 'utf8')));
+  let graph: ReturnType<typeof buildGraph>;
   let result: Awaited<ReturnType<typeof elkEngine.layout>>;
 
   beforeAll(async () => {
+    graph = buildGraph(parseDgm(readFileSync(FIXTURE, 'utf8')));
     result = await elkEngine.layout(graph, {
       width: 1200,
       height: 800,

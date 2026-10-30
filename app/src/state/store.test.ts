@@ -72,6 +72,9 @@ describe('undo gestures (Y1)', () => {
   });
 
   it('a foreign or stale token does not end another owner gesture (F4)', () => {
+    endGesture(null); // a stray end with no gesture active
+    expect(isGestureActive()).toBe(false);
+    expect(temporal.getState().isTracking).toBe(true);
     const stale = beginGesture();
     endGesture(stale);
     const before = past();
@@ -245,7 +248,8 @@ describe('gesture history robustness (R1)', () => {
     const s = useStore.getState();
     const slice = historySlice(s);
     expect(Object.keys(slice).sort()).toEqual(['edgeStyles', 'global', 'nodeStyles', 'pValues', 'positions']);
-    expect(historyEqual(slice, historySlice(s))).toBe(true);
+    s.setSelection(['a']);
+    expect(historyEqual(slice, historySlice(useStore.getState()))).toBe(true);
     s.setNodePosition('a', pos(77));
     expect(historyEqual(slice, historySlice(useStore.getState()))).toBe(false);
   });

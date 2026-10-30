@@ -193,28 +193,26 @@ describe('buildGraph - symmetric edges are deduplicated (X3)', () => {
 });
 
 describe('buildGraph - estimate rows prefer exact direction (P1)', () => {
-  it('a reversed code-1 row next to a COVAR pair gives its own ON edge, in either row order', () => {
-    for (const rows of [
-      ['2 1 y1 y3 0.100 0.020', '1 1 y3 y1 0.400 0.090'],
-      ['1 1 y3 y1 0.400 0.090', '2 1 y1 y3 0.100 0.020'],
-    ]) {
-      const g = synthGraph('f BY y1 y2 y3;', rows);
-      const on = g.edges.filter((e) => e.kind === 'ON');
-      expect(on.map((e) => e.id), rows.join(' / ')).toEqual(['ON:y3->y1']);
-      expect(on[0].unstd?.value).toBeCloseTo(0.4, 3);
-      const covars = g.edges.filter((e) => e.kind === 'COVAR');
-      expect(covars, rows.join(' / ')).toHaveLength(1);
-      expect(covars[0].unstd).toBeNull();
-      expect(covars[0].stdyx).toBeNull();
-    }
+  it.each([
+    [['2 1 y1 y3 0.100 0.020', '1 1 y3 y1 0.400 0.090']],
+    [['1 1 y3 y1 0.400 0.090', '2 1 y1 y3 0.100 0.020']],
+  ])('a reversed code-1 row next to a COVAR pair gives its own ON edge (rows %j)', (rows) => {
+    const g = synthGraph('f BY y1 y2 y3;', rows);
+    const on = g.edges.filter((e) => e.kind === 'ON');
+    expect(on.map((e) => e.id)).toEqual(['ON:y3->y1']);
+    expect(on[0].unstd?.value).toBeCloseTo(0.4, 3);
+    const covars = g.edges.filter((e) => e.kind === 'COVAR');
+    expect(covars).toHaveLength(1);
+    expect(covars[0].unstd).toBeNull();
+    expect(covars[0].stdyx).toBeNull();
   });
 
   it.each([1, 11, 21, 31])(
     'a directed row of code %i with only a reversed WITH pair synthesizes an ON edge',
     (code) => {
       const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', [`${code} 1 y2 y1 0.250 0.080`]);
-      expect(g.edges.map((e) => e.id).sort()).toEqual(
-        ['BY:f->y1', 'BY:f->y2', 'BY:f->y3', 'ON:y2->y1', 'WITH:y1->y2'],
+      expect(g.edges.filter((e) => e.kind !== 'BY').map((e) => e.id).sort()).toEqual(
+        ['ON:y2->y1', 'WITH:y1->y2'],
       );
     },
   );
@@ -227,13 +225,14 @@ describe('buildGraph - estimate rows prefer exact direction (P1)', () => {
 });
 
 describe('buildGraph - constraint-label rows by parameter type (9x)', () => {
-  it('a code-92 row labels the WITH edge in either order (92 rows were dropped)', () => {
-    for (const row of ['92 1 y2 y1 cv', '92 1 y1 y2 cv']) {
+  it.each(['92 1 y2 y1 cv', '92 1 y1 y2 cv'])(
+    'a code-92 row labels the WITH edge in either order, `%s` (92 rows were dropped)',
+    (row) => {
       const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', [row]);
-      expect(g.edges.find((e) => e.kind === 'WITH')?.constraint, row).toBe('cv');
-      expect(g.edges.filter((e) => e.kind === 'ON' || e.kind === 'COVAR'), row).toEqual([]);
-    }
-  });
+      expect(g.edges.find((e) => e.kind === 'WITH')?.constraint).toBe('cv');
+      expect(g.edges.filter((e) => e.kind === 'ON' || e.kind === 'COVAR')).toEqual([]);
+    },
+  );
 
   it('an unmatched code-92 row synthesizes a labelled COVAR edge', () => {
     const g = synthGraph('f BY y1 y2 y3;', ['92 1 y1 y3 cv']);
@@ -271,26 +270,29 @@ describe('buildGraph - estimate rows prefer an edge of the matching type (F1.1)'
     },
   );
 
-  it('a directed row next to a WITH pair gives the same ON edge whichever way the WITH was written (it landed on `y2 WITH y1`)', () => {
-    for (const decl of ['y2 WITH y1;', 'y1 WITH y2;']) {
+  it.each(['y2 WITH y1;', 'y1 WITH y2;'])(
+    'a directed row next to `%s` with no declared ON gives the ON edge (it landed on `y2 WITH y1`)',
+    (decl) => {
       const g = synthGraph(`f BY y1 y2 y3;\n${decl}`, ['1 1 y2 y1 0.500 0.100']);
-      expect(g.edges.find((e) => e.id === 'ON:y2->y1')?.unstd?.value, decl).toBeCloseTo(0.5, 3);
-      expect(g.edges.find((e) => e.kind === 'WITH')?.unstd, decl).toBeNull();
-    }
-  });
+      expect(g.edges.find((e) => e.id === 'ON:y2->y1')?.unstd?.value).toBeCloseTo(0.5, 3);
+      expect(g.edges.find((e) => e.kind === 'WITH')?.unstd).toBeNull();
+    },
+  );
 
-  it('a covariance row (codes 2, 12, 22, 32, 92) prefers a reversed WITH edge over an exact ON edge', () => {
-    const edges = synthGraph('f BY y1 y2 y3;\ny2 ON y1;\ny2 WITH y1;').edges;
-    for (const code of [2, 12, 22, 32, 92]) {
-      expect(matchEdgeForRow(code, 'y1', 'y2', edges)?.id, `code ${code}`).toBe('WITH:y2->y1');
-    }
-  });
+  it.each([2, 12, 22, 32, 92])(
+    'a covariance row of code %i prefers a reversed WITH edge over an exact ON edge',
+    (code) => {
+      const edges = synthGraph('f BY y1 y2 y3;\ny2 ON y1;\ny2 WITH y1;').edges;
+      expect(matchEdgeForRow(code, 'y1', 'y2', edges)?.id).toBe('WITH:y2->y1');
+    },
+  );
 
-  it('a covariance row next to an ON edge gives a COVAR edge in either row order (it was absorbed by `ON:y1->y2`)', () => {
-    for (const row of ['2 1 y1 y2 0.100 0.020', '2 1 y2 y1 0.100 0.020', '12 1 y1 y2 0.300 0.050']) {
+  it.each(['2 1 y1 y2 0.100 0.020', '2 1 y2 y1 0.100 0.020', '12 1 y1 y2 0.300 0.050'])(
+    'a covariance row `%s` next to an ON edge gives a COVAR edge (it was absorbed by `ON:y1->y2`)',
+    (row) => {
       const g = synthGraph('f BY y1 y2 y3;\ny2 ON y1;', [row]);
-      expect(g.edges.filter((e) => e.kind === 'COVAR'), row).toHaveLength(1);
-      expect(g.edges.filter((e) => e.kind === 'ON').map((e) => e.id), row).toEqual(['ON:y1->y2']);
-    }
-  });
+      expect(g.edges.filter((e) => e.kind === 'COVAR')).toHaveLength(1);
+      expect(g.edges.filter((e) => e.kind === 'ON').map((e) => e.id)).toEqual(['ON:y1->y2']);
+    },
+  );
 });

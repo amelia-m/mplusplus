@@ -92,8 +92,14 @@ describe('buildPValueMap', () => {
     expect(map['WITH:x1->x2']).toEqual(map['WITH:x2->x1']);
   });
 
-  it('omits variance-style rows from the p-value map', () => {
-    expect(Object.keys(map).some((k) => k.endsWith('->'))).toBe(false);
+  it('keys only the BY, ON and WITH rows, so variance rows get no entry', () => {
+    expect(Object.keys(map).sort()).toEqual([
+      'BY:fa->a1', 'BY:fa->a2', 'BY:fa->a3', 'BY:fb->b1', 'BY:fb->b2', 'BY:fb->b3', 'BY:fb->b4',
+      'BY:fc->c1', 'BY:fc->c2', 'BY:fc->c3', 'BY:fc->c4',
+      'COVAR:b4->c4', 'COVAR:c4->b4', 'COVAR:x1->x2', 'COVAR:x2->x1',
+      'ON:fa->fb', 'ON:fa->fc', 'ON:fb->fc', 'ON:fc->x1', 'ON:fc->x2', 'ON:z1->fa',
+      'WITH:b4->c4', 'WITH:c4->b4', 'WITH:x1->x2', 'WITH:x2->x1',
+    ]);
   });
 
   it('records WITH rows under COVAR keys in both orderings (X4)', () => {
