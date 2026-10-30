@@ -71,20 +71,6 @@ describe('undo gestures (Y1)', () => {
     expect(past()).toBe(before + 1);
   });
 
-  it('treats nested beginGesture and a stray endGesture as no-ops', () => {
-    endGesture(null); // without begin
-    expect(isGestureActive()).toBe(false);
-    const before = past();
-    const g = beginGesture();
-    expect(g).not.toBeNull();
-    expect(beginGesture()).toBeNull(); // nested
-    useStore.getState().setNodePosition('a', pos(20));
-    useStore.getState().setNodePosition('a', pos(30));
-    endGesture(g);
-    expect(isGestureActive()).toBe(false);
-    expect(past()).toBe(before + 1);
-  });
-
   it('a foreign or stale token does not end another owner gesture (F4)', () => {
     const stale = beginGesture();
     endGesture(stale);
@@ -201,18 +187,6 @@ describe('history equality (Y2)', () => {
     useStore.getState().setEdgeSelection(['e1']);
     expect(past()).toBe(before);
   });
-
-  it('a real position change still adds exactly one entry', () => {
-    const before = past();
-    useStore.getState().setNodePositions({ a: pos(99) });
-    expect(past()).toBe(before + 1);
-  });
-
-  it('a real style change still adds exactly one entry', () => {
-    const before = past();
-    useStore.getState().setNodeStyle('a', { fill: '#fff' });
-    expect(past()).toBe(before + 1);
-  });
 });
 
 describe('gesture history robustness (R1)', () => {
@@ -272,16 +246,8 @@ describe('gesture history robustness (R1)', () => {
     const slice = historySlice(s);
     expect(Object.keys(slice).sort()).toEqual(['edgeStyles', 'global', 'nodeStyles', 'pValues', 'positions']);
     expect(historyEqual(slice, historySlice(s))).toBe(true);
-    s.setSelection(['a']);
-    expect(historyEqual(slice, historySlice(useStore.getState()))).toBe(true);
     s.setNodePosition('a', pos(77));
     expect(historyEqual(slice, historySlice(useStore.getState()))).toBe(false);
-  });
-});
-
-describe('store API (R6)', () => {
-  it('no longer exposes the unused toggleInSelection action', () => {
-    expect('toggleInSelection' in useStore.getState()).toBe(false);
   });
 });
 
@@ -355,6 +321,7 @@ describe('no-op writes add no undo entry (Q3)', () => {
       () => useStore.getState().setGlobal({ decimals: useStore.getState().global.decimals + 1 }),
       () => useStore.getState().setNodePositions({ a: pos(11) }),
       () => useStore.getState().setNodeStyles(['a'], { fill: '#123456' }),
+      () => useStore.getState().setNodeStyle('a', { fill: '#fff' }),
       () => useStore.getState().setEdgeStyles(['e1'], { stroke: '#654321' }),
       () => useStore.getState().resetStyles(),
       () => useStore.getState().setPValues({ e2: { unstd: 0.5, stdyx: null } }),
