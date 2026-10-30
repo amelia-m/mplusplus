@@ -65,8 +65,7 @@ describe('parseDgm - syn_sem.dgm specific', () => {
     const a2 = faBy!.rhs.find((t) => t.name.toLowerCase() === 'a2');
     expect(a2?.constraint).toBe('la');
     const fbBy = dgm.modelStatements.find((s) => s.op === 'BY' && s.lhs.toLowerCase() === 'fb');
-    const b3 = fbBy!.rhs.find((t) => t.name.toLowerCase() === 'b3');
-    expect(b3?.constraint).toBe('lb');
+    expect(fbBy!.rhs.filter((t) => t.constraint != null).map((t) => t.constraint)).toEqual(['lb', 'lb']);
   });
 
   it('parses ON statements with multiple LHS tokens (x1 x2 ON fc)', () => {
@@ -91,6 +90,7 @@ describe('parseDgm - syn_sem.dgm specific', () => {
     // code 91 rows have a constraint label and no value/SE.
     expect(code91.every((e) => e.constraintLabel !== null)).toBe(true);
     expect(code91.every((e) => e.value === null && e.se === null)).toBe(true);
+    expect([...new Set(code91.map((e) => e.constraintLabel))].sort()).toEqual(['la', 'lb']);
 
     // Spot-check one numeric value.
     const faA1 = code1.find((e) => e.from === 'fa' && e.to === 'a1');
@@ -98,15 +98,6 @@ describe('parseDgm - syn_sem.dgm specific', () => {
     expect(faA1?.se).toBeCloseTo(0.044, 3);
   });
 
-  it('keeps equality-constraint labels on BY terms and on code-91 rows', () => {
-    const fbBy = dgm.modelStatements.find((s) => s.op === 'BY' && s.lhs.toLowerCase() === 'fb');
-    const constraints = fbBy!.rhs.filter((t) => t.constraint != null).map((t) => t.constraint);
-    expect(constraints).toEqual(['lb', 'lb']);
-    const labels91 = new Set(
-      dgm.estimates.filter((e) => e.code === 91).map((e) => e.constraintLabel ?? ''),
-    );
-    expect([...labels91].sort()).toEqual(['la', 'lb']);
-  });
 });
 
 describe('parseDgm - constraint-label rows of every type (syn_label.dgm)', () => {
