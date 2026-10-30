@@ -1,6 +1,6 @@
 app/node_modules/
 app/dist/
-app/.vite/
+.vite/
 app/coverage/
 app/tsconfig.tsbuildinfo
 *.log
