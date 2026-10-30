@@ -149,18 +149,24 @@ function synthDgm(input: string, rows: string[] = []): string {
   ].join('\n');
 }
 
-describe('parseDgm - start values in term lists', () => {
-  const termsOf = (model: string) => {
-    const dgm = parseDgm(
-      synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\nMODEL:\n${model}`),
-    );
-    const by = dgm.modelStatements.find((s) => s.op === 'BY');
-    expect(by).toBeDefined();
-    return by!.rhs;
-  };
+/** Parse `input` (commands after VARIABLE) with y1..y3 as NAMES and USEVARIABLES. */
+function parseY(input: string) {
+  return parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\n${input}`));
+}
 
+/** Model statements of a MODEL block holding `model`. */
+function statementsOf(model: string) {
+  return parseY(`MODEL:\n${model}`).modelStatements;
+}
+
+/** Terms on the right of the first BY statement in `model`. */
+function byTerms(model: string) {
+  return statementsOf(model).find((s) => s.op === 'BY')!.rhs;
+}
+
+describe('parseDgm - start values in term lists', () => {
   it('reads `y2*0.8` as a free term named y2 with start value 0.8', () => {
-    const rhs = termsOf('f BY y1 y2*0.8 y3;');
+    const rhs = byTerms('f BY y1 y2*0.8 y3;');
     expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
     const y2 = rhs[1];
     expect(y2.free).toBe(true);
@@ -169,21 +175,21 @@ describe('parseDgm - start values in term lists', () => {
   });
 
   it('accepts leading-dot and negative start values', () => {
-    const rhs = termsOf('f BY y1 y2*.5 y3*-1.25;');
+    const rhs = byTerms('f BY y1 y2*.5 y3*-1.25;');
     expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
     expect(rhs[1].start).toBeCloseTo(0.5, 10);
     expect(rhs[2].start).toBeCloseTo(-1.25, 10);
   });
 
   it('keeps a bare `y2*` free with no start value', () => {
-    const y2 = termsOf('f BY y1 y2* y3;')[1];
+    const y2 = byTerms('f BY y1 y2* y3;')[1];
     expect(y2.name).toBe('y2');
     expect(y2.free).toBe(true);
     expect(y2.start).toBeNull();
   });
 
   it('keeps `y2@1` as a fixed term', () => {
-    const y2 = termsOf('f BY y1 y2@1 y3;')[1];
+    const y2 = byTerms('f BY y1 y2@1 y3;')[1];
     expect(y2.name).toBe('y2');
     expect(y2.free).toBe(false);
     expect(y2.fixed).toBe(1);
@@ -191,7 +197,7 @@ describe('parseDgm - start values in term lists', () => {
 
   it('keeps the constraint label on `y2*0.8 (lab)` and `y2*0.8(lab)`', () => {
     for (const model of ['f BY y1 y2*0.8 (lab) y3;', 'f BY y1 y2*0.8(lab) y3;']) {
-      const rhs = termsOf(model);
+      const rhs = byTerms(model);
       expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
       expect(rhs[1].constraint).toBe('lab');
       expect(rhs[1].start).toBeCloseTo(0.8, 10);
@@ -226,20 +232,14 @@ describe('parseDgm - ARE / IS option syntax', () => {
 });
 
 describe('parseDgm - modifiers with missing or negative values (R7, R8)', () => {
-  const statementsOf = (model: string) =>
-    parseDgm(
-      synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\nMODEL:\n${model}`),
-    ).modelStatements;
-
   it('leaves `fixed` null for `y2@` with no value in a term list', () => {
-    const by = statementsOf('f BY y1 y2@ y3;').find((s) => s.op === 'BY')!;
-    expect(by.rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
-    expect(by.rhs[1].fixed).toBeNull();
+    const rhs = byTerms('f BY y1 y2@ y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].fixed).toBeNull();
   });
 
   it('still reads `y2@0` as fixed at 0', () => {
-    const by = statementsOf('f BY y1 y2@0 y3;').find((s) => s.op === 'BY')!;
-    expect(by.rhs[1].fixed).toBe(0);
+    expect(byTerms('f BY y1 y2@0 y3;')[1].fixed).toBe(0);
   });
 
   it('leaves `fixed` null for a standalone `y1@;`', () => {
@@ -263,12 +263,6 @@ describe('parseDgm - modifiers with missing or negative values (R7, R8)', () => 
 });
 
 describe('parseDgm - one modifier grammar for term lists and standalone pins (P2)', () => {
-  const statementsOf = (model: string) =>
-    parseDgm(
-      synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\nMODEL:\n${model}`),
-    ).modelStatements;
-  const byTerms = (model: string) => statementsOf(model).find((s) => s.op === 'BY')!.rhs;
-
   it('reads `y2@ 1` as y2 fixed at 1, not a variable named 1', () => {
     const rhs = byTerms('f BY y1 y2@ 1 y3;');
     expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
@@ -311,12 +305,11 @@ describe('parseDgm - one modifier grammar for term lists and standalone pins (P2
 });
 
 describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => {
-  const statementsOf = (input: string) =>
-    parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\n${input}`))
-      .modelStatements;
+  // These inputs supply their own MODEL: line and the commands around it.
+  const sectionStatements = (input: string) => parseY(input).modelStatements;
 
   it('does not read `MODEL CONSTRAINT: NEW(...)` lines as phantom model statements', () => {
-    const stmts = statementsOf(
+    const stmts = sectionStatements(
       'MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\nNEW(a*0.5);\nNEW(b*0.3);',
     );
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
@@ -325,17 +318,17 @@ describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => 
   it('does not read a statement-shaped line under `MODEL CONSTRAINT:` as a model statement', () => {
     // Unlike `NEW(a*0.5)`, `y2 ON y1` parses as a statement, so only the
     // section bound keeps it out.
-    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\ny2 ON y1;');
+    const stmts = sectionStatements('MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\ny2 ON y1;');
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
   });
 
   it('stops at a later top-level command such as `OUTPUT:`', () => {
-    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nOUTPUT:\nf ON y1;');
+    const stmts = sectionStatements('MODEL:\nf BY y1 y2 y3;\nOUTPUT:\nf ON y1;');
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
   });
 
   it('still finds the MODEL block when other commands follow it on later lines', () => {
-    const stmts = statementsOf('ANALYSIS: ESTIMATOR = ML;\nMODEL: f BY y1 y2 y3;\nf@1;\nOUTPUT: STANDARDIZED;');
+    const stmts = sectionStatements('ANALYSIS: ESTIMATOR = ML;\nMODEL: f BY y1 y2 y3;\nf@1;\nOUTPUT: STANDARDIZED;');
     expect(stmts.map((s) => [s.op, s.lhs])).toEqual([
       ['BY', 'f'],
       ['WITH', 'f'],
@@ -343,22 +336,18 @@ describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => 
   });
 
   it('does not read a `*` inside a `(label)` as a pin (`y3 (a*0.5);` phantom bug)', () => {
-    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\ny3 (a*0.5);');
+    const stmts = sectionStatements('MODEL:\nf BY y1 y2 y3;\ny3 (a*0.5);');
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
   });
 
   it('rejects standalone pins whose name is not an identifier (`y1-y9@1;`, `[y1@0];`)', () => {
     // y9 is not a variable, so `y1-y9` is not a list Mplus could expand.
-    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\ny1-y9@1;\n[y1@0];');
+    const stmts = sectionStatements('MODEL:\nf BY y1 y2 y3;\ny1-y9@1;\n[y1@0];');
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
   });
 });
 
 describe('parseDgm - spaced modifier values (F1.4, F1.5)', () => {
-  const byTerms = (model: string) =>
-    parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\nMODEL:\n${model}`))
-      .modelStatements.find((s) => s.op === 'BY')!.rhs;
-
   it('reads a spaced value with a leading plus, `y2* +0.5` (was read as a variable named +0.5)', () => {
     const rhs = byTerms('f BY y1 y2* +0.5 y3;');
     expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
