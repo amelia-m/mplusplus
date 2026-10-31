@@ -1,0 +1,379 @@
+VERSION 1.1.0
+INPUT
+TITLE:
+
+Four-wave panel model of ethnic and civic identity content
+
+DATA:
+file is DATA_mplus.dat;
+VARIABLE:
+names are
+     w_n2 et_bor1 et_anc1 et_liv1 ci_dem1 ci_dut1 ci_equ1 et_bor9 et_anc9
+     et_liv9 ci_dem9 ci_dut9 ci_equ9 et_bor11 et_anc11 et_liv11 ci_dem11
+     ci_dut11 ci_equ11 et_bor21 et_anc21 et_liv21 ci_dem21 ci_dut21 ci_equ21
+     id_imp1 id_oft1 id_adj1 id_imp9 id_oft9 id_adj9 id_imp11 id_oft11
+     id_adj11 id_imp21 id_oft21 id_adj21 rwa1_2 rwa2_2 rwa3_2 rwa1_9 rwa2_9
+     rwa3_9 rwa1_12 rwa2_12 rwa3_12 rwa1_21 rwa2_21 caseid ;
+usevariables are et_bor1 et_anc1 et_liv1 ci_dem1 ci_dut1 ci_equ1 et_bor9 et_anc9
+     et_liv9 ci_dem9 ci_dut9 ci_equ9 et_bor11 et_anc11 et_liv11
+     ci_dem11 ci_dut11 ci_equ11 et_bor21 et_anc21 et_liv21 ci_dem21
+     ci_dut21 ci_equ21 ;
+categorical are et_bor1 et_anc1 et_liv1 ci_dem1 ci_dut1 ci_equ1 et_bor9 et_anc9
+     et_liv9 ci_dem9 ci_dut9 ci_equ9 et_bor11 et_anc11 et_liv11
+     ci_dem11 ci_dut11 ci_equ11 et_bor21 et_anc21 et_liv21 ci_dem21
+     ci_dut21 ci_equ21 ;
+missing are all (-99) ;
+useobservations is w_n2==1 ;
+ANALYSIS:
+type is general ;
+parameterization is theta ;
+estimator is WLSMV ;
+iterations 50000 ;
+OUTPUT:
+STDYX ;
+mod(all) ;
+MODEL:
+ETH_1 by et_anc1 (1)
+   et_bor1 (2)
+   et_liv1 (3) ;
+CIV_1 by ci_dem1 (4)
+   ci_dut1 (5)
+   ci_equ1 (6) ;
+ETH_2 by et_anc9 (1)
+   et_bor9 (2)
+   et_liv9 (3) ;
+CIV_2 by ci_dem9 (4)
+   ci_dut9 (5)
+   ci_equ9 (6) ;
+ETH_3 by et_anc11 (1)
+   et_bor11 (2)
+   et_liv11 (3) ;
+CIV_3 by ci_dem11 (4)
+   ci_dut11 (5)
+      ci_equ11 (6) ;
+ETH_4 by et_anc21 (1)
+   et_bor21 (2)
+   et_liv21 (3) ;
+CIV_4 by ci_dem21 (4)
+   ci_dut21 (5)
+      ci_equ21 (6) ;
+ETH_2 on ETH_1 ETH_1 ;
+ETH_3 on ETH_2 ETH_2 ;
+ETH_4 on ETH_3 ETH_3 ;
+CIV_2 on CIV_1 ETH_1 ;
+CIV_3 on CIV_2 ETH_2 ;
+CIV_4 on CIV_3 ETH_3 ;
+et_anc1 with et_anc9 et_anc11  ;
+et_anc9 with et_anc11 et_anc21 ;
+et_anc11 with et_anc21 ;
+et_bor1 with et_bor9 et_bor11 et_bor21 ;
+et_bor9 with et_bor11 et_bor21 ;
+et_bor11 with et_bor21 ;
+et_liv1 with et_liv9 et_liv11 et_liv21 ;
+et_liv9 with et_liv11 et_liv21 ;
+et_liv11 with et_liv21 ;
+ci_dem1 with ci_dem9 ci_dem11 ;
+ci_dem9 with ci_dem11 ci_dem21 ;
+ci_dem11 with ci_dem21 ;
+ci_dut1 with ci_dut9 ci_dut11 ci_dut21 ;
+ci_dut9 with ci_dut11 ci_dut21 ;
+ci_dut11 with ci_dut21 ;
+ci_equ1 with ci_equ9 ci_equ11 ci_equ21 ;
+ci_equ9 with ci_equ11 ci_equ21 ;
+ci_equ11 with ci_equ21 ;
+[et_anc1$1 et_anc9$1 et_anc11$1 et_anc21$1] (7) ;
+[et_anc1$2 et_anc9$2 et_anc11$2 et_anc21$2] (8) ;
+[et_anc1$3 et_anc9$3 et_anc11$3 et_anc21$3] (9) ;
+[et_anc1$4 et_anc9$4 et_anc11$4 et_anc21$4] (10) ;
+[et_bor1$1 et_bor9$1 et_bor11$1 et_bor21$1] (11) ;
+[et_bor1$2 et_bor9$2 et_bor11$2 et_bor21$2] (12) ;
+[et_bor1$3 et_bor9$3 et_bor11$3 et_bor21$3] (13) ;
+[et_bor1$4 et_bor9$4 et_bor11$4 et_bor21$4] (14) ;
+[et_liv1$1 et_liv9$1 et_liv11$1 et_liv21$1] (15) ;
+[et_liv1$2 et_liv9$2 et_liv11$2 et_liv21$2] (16) ;
+[et_liv1$3 et_liv9$3 et_liv11$3 et_liv21$3] (17) ;
+[et_liv1$4 et_liv9$4 et_anc11$4 et_liv21$4] (18) ;
+[ci_dem1$1 ci_dem9$1 ci_dem11$1 ci_dem21$1] (19) ;
+[ci_dem1$2 ci_dem9$2 ci_dem11$2 ci_dem21$2] (20) ;
+[ci_dem1$3 ci_dem9$3 ci_dem11$3 ci_dem21$3] (21) ;
+[ci_dem1$4 ci_dem9$4 ci_dem11$4 ci_dem21$4] (22) ;
+[ci_dut1$1 ci_dut9$1 ci_dut11$1 ci_dut21$1] (23) ;
+[ci_dut1$2 ci_dut9$2 ci_dut11$2 ci_dut21$2] (24) ;
+[ci_dut1$3 ci_dut9$3 ci_dut11$3 ci_dut21$3] (25) ;
+[ci_dut1$4 ci_dut9$4 ci_dut11$4 ci_dut21$4] (26) ;
+[ci_equ1$1 ci_equ9$1 ci_equ11$1 ci_equ21$1] (27) ;
+[ci_equ1$2 ci_equ9$2 ci_equ11$2 ci_equ21$2] (28) ;
+[ci_equ1$3 ci_equ9$3 ci_equ11$3 ci_equ21$3] (29) ;
+[ci_equ1$4 ci_equ9$4 ci_equ11$4 ci_equ21$4] (30) ;
+[ETH_1@0] ;
+[ETH_2] ;
+[ETH_3] ;
+[ETH_4] ;
+[CIV_1@0] ;
+[CIV_2] ;
+[CIV_3] ;
+[CIV_4] ;
+INPUT_END
+2
+2
+0
+2
+WLSMV
+1
+GENERAL
+0
+24
+8
+0
+et_bor1 et_anc1 et_liv1 ci_dem1 ci_dut1 ci_equ1 et_bor9 et_anc9 et_liv9 ci_dem9 ci_dut9 ci_equ9 et_bor11 et_anc11 et_liv11 ci_dem11 ci_dut11 ci_equ11 et_bor21 et_anc21 et_liv21 ci_dem21 ci_dut21 ci_equ21 eth_1 civ_1 eth_2 civ_2 eth_3 civ_3 eth_4 civ_4
+4
+-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 0 0 1 1 2 2 3 3
+0
+8
+eth_1
+et_anc1 et_bor1 et_liv1
+civ_1
+ci_dem1 ci_dut1 ci_equ1
+eth_2
+et_anc9 et_bor9 et_liv9
+civ_2
+ci_dem9 ci_dut9 ci_equ9
+eth_3
+et_anc11 et_bor11 et_liv11
+civ_3
+ci_dem11 ci_dut11 ci_equ11
+eth_4
+et_anc21 et_bor21 et_liv21
+civ_4
+ci_dem21 ci_dut21 ci_equ21
+1 1 eth_1 et_anc1 1.000 0.000
+1 1 eth_1 et_bor1 0.907 0.013
+1 1 eth_1 et_liv1 0.606 0.007
+1 1 civ_1 ci_dem1 1.000 0.000
+1 1 civ_1 ci_dut1 0.692 0.020
+1 1 civ_1 ci_equ1 0.389 0.010
+1 1 eth_2 et_anc9 1.000 0.000
+1 1 eth_2 et_bor9 0.907 0.013
+1 1 eth_2 et_liv9 0.606 0.007
+1 1 civ_2 ci_dem9 1.000 0.000
+1 1 civ_2 ci_dut9 0.692 0.020
+1 1 civ_2 ci_equ9 0.389 0.010
+1 1 eth_3 et_anc11 1.000 0.000
+1 1 eth_3 et_bor11 0.907 0.013
+1 1 eth_3 et_liv11 0.606 0.007
+1 1 civ_3 ci_dem11 1.000 0.000
+1 1 civ_3 ci_dut11 0.692 0.020
+1 1 civ_3 ci_equ11 0.389 0.010
+1 1 eth_4 et_anc21 1.000 0.000
+1 1 eth_4 et_bor21 0.907 0.013
+1 1 eth_4 et_liv21 0.606 0.007
+1 1 civ_4 ci_dem21 1.000 0.000
+1 1 civ_4 ci_dut21 0.692 0.020
+1 1 civ_4 ci_equ21 0.389 0.010
+1 1 eth_1 eth_2 0.815 0.008
+1 1 eth_2 eth_3 0.809 0.010
+1 1 eth_3 eth_4 1.086 0.016
+1 1 civ_1 civ_2 0.814 0.012
+1 1 eth_1 civ_2 0.043 0.007
+1 1 civ_2 civ_3 0.822 0.014
+1 1 eth_2 civ_3 0.002 0.009
+1 1 civ_3 civ_4 0.890 0.019
+1 1 eth_3 civ_4 0.053 0.013
+2 1 et_anc1 et_anc9 0.043 0.022
+2 1 et_anc1 et_anc11 0.481 0.022
+2 1 et_anc9 et_anc11 -0.076 0.022
+2 1 et_anc9 et_anc21 0.418 0.030
+2 1 et_anc11 et_anc21 -0.071 0.029
+2 1 et_bor1 et_bor9 -0.111 0.020
+2 1 et_bor1 et_bor11 0.334 0.021
+2 1 et_bor1 et_bor21 0.605 0.029
+2 1 et_bor9 et_bor11 -0.154 0.020
+2 1 et_bor9 et_bor21 0.199 0.027
+2 1 et_bor11 et_bor21 -0.176 0.026
+2 1 et_liv1 et_liv9 0.242 0.012
+2 1 et_liv1 et_liv11 0.376 0.014
+2 1 et_liv1 et_liv21 0.470 0.019
+2 1 et_liv9 et_liv11 0.215 0.013
+2 1 et_liv9 et_liv21 0.313 0.017
+2 1 et_liv11 et_liv21 0.151 0.016
+2 1 ci_dem1 ci_dem9 0.222 0.026
+2 1 ci_dem1 ci_dem11 0.689 0.027
+2 1 ci_dem9 ci_dem11 0.115 0.030
+2 1 ci_dem9 ci_dem21 0.363 0.036
+2 1 ci_dem11 ci_dem21 -0.033 0.039
+2 1 ci_dut1 ci_dut9 0.298 0.015
+2 1 ci_dut1 ci_dut11 0.440 0.017
+2 1 ci_dut1 ci_dut21 0.512 0.022
+2 1 ci_dut9 ci_dut11 0.262 0.018
+2 1 ci_dut9 ci_dut21 0.368 0.022
+2 1 ci_dut11 ci_dut21 0.126 0.024
+2 1 ci_equ1 ci_equ9 0.393 0.010
+2 1 ci_equ1 ci_equ11 0.454 0.011
+2 1 ci_equ1 ci_equ21 0.434 0.014
+2 1 ci_equ9 ci_equ11 0.393 0.011
+2 1 ci_equ9 ci_equ21 0.367 0.014
+2 1 ci_equ11 ci_equ21 0.339 0.014
+2 1 civ_1 eth_1 0.035 0.047
+2 1 civ_4 eth_4 0.419 0.054
+4 1 eth_2 1.591 0.048
+4 1 civ_2 1.337 0.070
+4 1 eth_3 0.949 0.032
+4 1 civ_3 1.080 0.064
+4 1 eth_4 1.606 0.064
+4 1 civ_4 1.632 0.102
+5 1 eth_1 5.618 0.134
+5 1 civ_1 3.535 0.152
+11 1 eth_1 et_anc1 0.921 0.002
+11 1 eth_1 et_bor1 0.907 0.002
+11 1 eth_1 et_liv1 0.821 0.003
+11 1 civ_1 ci_dem1 0.883 0.004
+11 1 civ_1 ci_dut1 0.793 0.005
+11 1 civ_1 ci_equ1 0.590 0.006
+11 1 eth_2 et_anc9 0.917 0.002
+11 1 eth_2 et_bor9 0.902 0.002
+11 1 eth_2 et_liv9 0.813 0.003
+11 1 civ_2 ci_dem9 0.887 0.004
+11 1 civ_2 ci_dut9 0.799 0.005
+11 1 civ_2 ci_equ9 0.598 0.006
+11 1 eth_3 et_anc11 0.903 0.002
+11 1 eth_3 et_bor11 0.886 0.002
+11 1 eth_3 et_liv11 0.787 0.004
+11 1 civ_3 ci_dem11 0.884 0.004
+11 1 civ_3 ci_dut11 0.795 0.005
+11 1 civ_3 ci_equ11 0.592 0.006
+11 1 eth_4 et_anc21 0.934 0.002
+11 1 eth_4 et_bor21 0.921 0.002
+11 1 eth_4 et_liv21 0.845 0.003
+11 1 civ_4 ci_dem21 0.904 0.004
+11 1 civ_4 ci_dut21 0.826 0.005
+11 1 civ_4 ci_equ21 0.636 0.007
+11 1 eth_1 eth_2 0.837 0.004
+11 1 eth_2 eth_3 0.887 0.004
+11 1 eth_3 eth_4 0.875 0.005
+11 1 civ_1 civ_2 0.796 0.006
+11 1 eth_1 civ_2 0.053 0.009
+11 1 civ_2 civ_3 0.835 0.007
+11 1 eth_2 civ_3 0.002 0.011
+11 1 civ_3 civ_4 0.794 0.009
+11 1 eth_3 civ_4 0.053 0.013
+12 1 et_anc1 et_anc9 0.043 0.022
+12 1 et_anc1 et_anc11 0.481 0.022
+12 1 et_anc9 et_anc11 -0.076 0.022
+12 1 et_anc9 et_anc21 0.418 0.030
+12 1 et_anc11 et_anc21 -0.071 0.029
+12 1 et_bor1 et_bor9 -0.111 0.020
+12 1 et_bor1 et_bor11 0.334 0.021
+12 1 et_bor1 et_bor21 0.605 0.029
+12 1 et_bor9 et_bor11 -0.154 0.020
+12 1 et_bor9 et_bor21 0.199 0.027
+12 1 et_bor11 et_bor21 -0.176 0.026
+12 1 et_liv1 et_liv9 0.242 0.012
+12 1 et_liv1 et_liv11 0.376 0.014
+12 1 et_liv1 et_liv21 0.470 0.019
+12 1 et_liv9 et_liv11 0.215 0.013
+12 1 et_liv9 et_liv21 0.313 0.017
+12 1 et_liv11 et_liv21 0.151 0.016
+12 1 ci_dem1 ci_dem9 0.222 0.026
+12 1 ci_dem1 ci_dem11 0.689 0.027
+12 1 ci_dem9 ci_dem11 0.115 0.030
+12 1 ci_dem9 ci_dem21 0.363 0.036
+12 1 ci_dem11 ci_dem21 -0.033 0.039
+12 1 ci_dut1 ci_dut9 0.298 0.015
+12 1 ci_dut1 ci_dut11 0.440 0.017
+12 1 ci_dut1 ci_dut21 0.512 0.022
+12 1 ci_dut9 ci_dut11 0.262 0.018
+12 1 ci_dut9 ci_dut21 0.368 0.022
+12 1 ci_dut11 ci_dut21 0.126 0.024
+12 1 ci_equ1 ci_equ9 0.393 0.010
+12 1 ci_equ1 ci_equ11 0.454 0.011
+12 1 ci_equ1 ci_equ21 0.434 0.014
+12 1 ci_equ9 ci_equ11 0.393 0.011
+12 1 ci_equ9 ci_equ21 0.367 0.014
+12 1 ci_equ11 ci_equ21 0.339 0.014
+12 1 civ_1 eth_1 0.008 0.011
+12 1 civ_4 eth_4 0.259 0.032
+14 1 eth_2 0.299 0.007
+14 1 civ_2 0.362 0.010
+14 1 eth_3 0.214 0.006
+14 1 civ_3 0.302 0.011
+14 1 eth_4 0.235 0.009
+14 1 civ_4 0.363 0.015
+15 1 eth_1 1.000 0.0000000001000
+15 1 civ_1 1.000 0.0000000001000
+31 1 eth_1 et_anc1 2.370 0.028
+31 1 eth_1 et_bor1 2.149 0.024
+31 1 eth_1 et_liv1 1.435 0.015
+31 1 civ_1 ci_dem1 1.880 0.040
+31 1 civ_1 ci_dut1 1.301 0.021
+31 1 civ_1 ci_equ1 0.731 0.011
+31 1 eth_2 et_anc9 2.307 0.028
+31 1 eth_2 et_bor9 2.091 0.024
+31 1 eth_2 et_liv9 1.397 0.015
+31 1 civ_2 ci_dem9 1.922 0.042
+31 1 civ_2 ci_dut9 1.330 0.022
+31 1 civ_2 ci_equ9 0.747 0.012
+31 1 eth_3 et_anc11 2.106 0.027
+31 1 eth_3 et_bor11 1.909 0.024
+31 1 eth_3 et_liv11 1.275 0.015
+31 1 civ_3 ci_dem11 1.891 0.043
+31 1 civ_3 ci_dut11 1.309 0.023
+31 1 civ_3 ci_equ11 0.735 0.012
+31 1 eth_4 et_anc21 2.614 0.037
+31 1 eth_4 et_bor21 2.370 0.031
+31 1 eth_4 et_liv21 1.583 0.020
+31 1 civ_4 ci_dem21 2.120 0.050
+31 1 civ_4 ci_dut21 1.467 0.027
+31 1 civ_4 ci_equ21 0.824 0.014
+31 1 eth_1 eth_2 0.837 0.004
+31 1 eth_2 eth_3 0.887 0.004
+31 1 eth_3 eth_4 0.875 0.005
+31 1 civ_1 civ_2 0.796 0.006
+31 1 eth_1 civ_2 0.053 0.009
+31 1 civ_2 civ_3 0.835 0.007
+31 1 eth_2 civ_3 0.002 0.011
+31 1 civ_3 civ_4 0.794 0.009
+31 1 eth_3 civ_4 0.053 0.013
+32 1 et_anc1 et_anc9 0.043 0.022
+32 1 et_anc1 et_anc11 0.481 0.022
+32 1 et_anc9 et_anc11 -0.076 0.022
+32 1 et_anc9 et_anc21 0.418 0.030
+32 1 et_anc11 et_anc21 -0.071 0.029
+32 1 et_bor1 et_bor9 -0.111 0.020
+32 1 et_bor1 et_bor11 0.334 0.021
+32 1 et_bor1 et_bor21 0.605 0.029
+32 1 et_bor9 et_bor11 -0.154 0.020
+32 1 et_bor9 et_bor21 0.199 0.027
+32 1 et_bor11 et_bor21 -0.176 0.026
+32 1 et_liv1 et_liv9 0.242 0.012
+32 1 et_liv1 et_liv11 0.376 0.014
+32 1 et_liv1 et_liv21 0.470 0.019
+32 1 et_liv9 et_liv11 0.215 0.013
+32 1 et_liv9 et_liv21 0.313 0.017
+32 1 et_liv11 et_liv21 0.151 0.016
+32 1 ci_dem1 ci_dem9 0.222 0.026
+32 1 ci_dem1 ci_dem11 0.689 0.027
+32 1 ci_dem9 ci_dem11 0.115 0.030
+32 1 ci_dem9 ci_dem21 0.363 0.036
+32 1 ci_dem11 ci_dem21 -0.033 0.039
+32 1 ci_dut1 ci_dut9 0.298 0.015
+32 1 ci_dut1 ci_dut11 0.440 0.017
+32 1 ci_dut1 ci_dut21 0.512 0.022
+32 1 ci_dut9 ci_dut11 0.262 0.018
+32 1 ci_dut9 ci_dut21 0.368 0.022
+32 1 ci_dut11 ci_dut21 0.126 0.024
+32 1 ci_equ1 ci_equ9 0.393 0.010
+32 1 ci_equ1 ci_equ11 0.454 0.011
+32 1 ci_equ1 ci_equ21 0.434 0.014
+32 1 ci_equ9 ci_equ11 0.393 0.011
+32 1 ci_equ9 ci_equ21 0.367 0.014
+32 1 ci_equ11 ci_equ21 0.339 0.014
+32 1 civ_1 eth_1 0.008 0.011
+32 1 civ_4 eth_4 0.259 0.032
+34 1 eth_2 0.299 0.007
+34 1 civ_2 0.362 0.010
+34 1 eth_3 0.214 0.006
+34 1 civ_3 0.302 0.011
+34 1 eth_4 0.235 0.009
+34 1 civ_4 0.363 0.015
+35 1 eth_1 1.000 0.0000000001000
+35 1 civ_1 1.000 0.0000000001000
