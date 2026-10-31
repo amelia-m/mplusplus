@@ -35,7 +35,13 @@ JOBS = {
     "iwas-zenodo-14575311": ("iwas.dat", [("CFA.txt", "iwas_cfa")]),
 }
 
-FILE_RE = re.compile(r"(?im)^(\s*(?:DATA:\s*)?FILE\s*(?:IS|=)\s*)[^;]*;")
+DATA_RE = re.compile(r"(?im)^\s*DATA\s*:")
+# The next command after DATA ends its section. Only the full command names;
+# the inputs here do not abbreviate them.
+NEXT_COMMAND_RE = re.compile(
+    r"(?im)^\s*(?:VARIABLE|DEFINE|ANALYSIS|MODEL|OUTPUT|SAVEDATA|PLOT|MONTECARLO)\b[^:\n]*:"
+)
+FILE_RE = re.compile(r"(?i)\b(FILE\s*(?:IS|=)\s*)[^;]*;")
 
 
 def csv_to_dat(src: pathlib.Path, dst: pathlib.Path) -> None:
@@ -51,10 +57,22 @@ def csv_to_dat(src: pathlib.Path, dst: pathlib.Path) -> None:
 
 
 def adapt(text: str, data: str) -> str:
+    """Point the DATA command at `data`, adding a DATA command if there is none.
+
+    Only a FILE inside the DATA command is replaced, so a SAVEDATA or PLOT
+    FILE is never mistaken for the data file.
+    """
     text = text.split("\n-----", 1)[0]
-    if FILE_RE.search(text):
-        return FILE_RE.sub(lambda m: f"{m.group(1)}{data};", text, count=1)
-    return re.sub(r"(?im)^(\s*VARIABLE\s*:)", f"DATA: FILE IS {data};\n\\1", text, count=1)
+    start = DATA_RE.search(text)
+    if start is None:
+        return re.sub(r"(?im)^(\s*VARIABLE\s*:)", f"DATA: FILE IS {data};\n\\1", text, count=1)
+    nxt = NEXT_COMMAND_RE.search(text, start.end())
+    end = nxt.start() if nxt else len(text)
+    # Keep the input's own spelling of `FILE IS` / `file =`; change only the path.
+    section, n = FILE_RE.subn(lambda m: f"{m.group(1)}{data};", text[start.start():end], count=1)
+    if n == 0:
+        raise SystemExit("DATA command without a FILE statement")
+    return text[:start.start()] + section + text[end:]
 
 
 def run_set(run: pathlib.Path, arg: str) -> bool:
@@ -66,12 +84,19 @@ def run_set(run: pathlib.Path, arg: str) -> bool:
         if not inputs:
             raise SystemExit(f"no input {only!r} in {name}")
     folder = run / name
-    folder.mkdir(parents=True, exist_ok=True)
+    # A reused folder would keep an earlier run's .out and .dgm, and a failed
+    # rerun would then look like a success.
+    if folder.exists():
+        raise SystemExit(f"run folder exists, use a new run name: {folder}")
     src_dir = SRC / name
     if (src_dir / data).exists():
+        folder.mkdir(parents=True)
         shutil.copyfile(src_dir / data, folder / data)
-    else:
+    elif (src_dir / "Data.csv").exists():
+        folder.mkdir(parents=True)
         csv_to_dat(src_dir / "Data.csv", folder / data)
+    else:
+        raise SystemExit(f"no {data} or Data.csv in {src_dir}")
     ok = True
     for src, stem in inputs:
         text = (src_dir / src).read_text(encoding="utf-8-sig", errors="replace")

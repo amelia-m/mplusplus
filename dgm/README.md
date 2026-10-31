@@ -1,11 +1,6 @@
 # `.dgm` fixtures
 
-Most files here are synthetic: an invented model with invented variable names,
-fitted by Mplus to data that Mplus simulated (`MONTECARLO`). The rest come
-from openly licensed (CC0 1.0) published replication packages,
-listed under "Published models" below. No other research data, and nothing derived from
-the Mplus User's Guide examples, goes in this folder. The parser and graph
-test suites read every `.dgm` here at runtime.
+Most files here are synthetic: an invented model with invented variable names, fitted by Mplus to data that Mplus simulated (`MONTECARLO`). The rest come from openly licensed (CC0 1.0) published replication packages, listed under "Published models" below. No other research data, and nothing derived from the Mplus User's Guide examples, goes in this folder. The parser and graph test suites read every `.dgm` here at runtime.
 
 | File | Model | Covers |
 |---|---|---|
@@ -37,31 +32,17 @@ To regenerate: download the package, copy its `.inp` files and
 `Tolerance2021.dat` into a scratch folder, run `Mplus <input> /diagram`, and
 copy the lower-cased `.dgm` here.
 
-The files below were run with Mplus 8.11 and `/diagram` on 2026-10-30. Each
-`.dgm` holds the (adapted) input and the estimates only, not the data. The
-only change to the CC0 inputs is the `FILE` path, set to the local data file
-name.
+The files below were run with Mplus 8.11 and `/diagram` on 2026-10-30. Each `.dgm` holds the (adapted) input and the estimates only, not the data. The only change to the CC0 inputs is the `FILE` path, set to the local data file name.
 
 | File | Source and licence | Model | Covers |
 |---|---|---|---|
 | `lcsmcn.dgm` | Golec de Zavala and Federico, replication data, Harvard Dataverse doi:10.7910/DVN/LW0GTR, CC0 1.0 (`lcsmcn.inp`) | Latent change score model: a change factor `chct1` measured by `rcp014@1`, regressed on the earlier score and 13 covariates, MLR | Bracketed means and bare variance statements; `@` with no value; a `WEIGHT` variable listed in USEVARIABLES; 78 undeclared covariances among the exogenous covariates, which become COVAR edges; `OUTPUT: CINT` |
 | `ms_fig2.dgm` | Mader and Schoen, "Stability of national identity content", Political Psychology (2023), doi:10.1111/pops.12888; replication data Harvard Dataverse doi:10.7910/DVN/P6XU2N, CC0 1.0 (`Mplus 01 Figure 2.inp`) | Two factors measured at four waves (8 factors, 24 categorical indicators), cross-lagged, WLSMV | Numeric equality labels on loadings (`(1)` to `(6)`); residual covariances across waves; threshold statements (`[et_anc1$1 ...]`); a predictor repeated in one ON statement (`ETH_2 on ETH_1 ETH_1`); two undeclared factor covariances (COVAR) |
 | `idnfc41b.dgm` | Federico and Ekstrom, "The Political Self", Psychological Science (2017); replication data Harvard Dataverse doi:10.7910/DVN/OE9BNP, CC0 1.0 (`idnfc41b.inp`) | Two-group SEM (`GROUPING IS rsdic`): two factors, two mediators, six covariates, ML | A multi-group model with a group-specific `MODEL high:` section and labels that differ by group; bootstrap confidence limits (`CINTERVAL(BCBOOTSTRAP)`). Known wrong today: the second group's estimates and labels overwrite the first group's on each edge (multi-group decision in `TODO.md`) |
-To regenerate these: download the files named above into
-`docs/reference/public-models/<set>/` (set names are in
-`tools/mplus/run-public-models.py`) and run
-`python -I tools/mplus/run-public-models.py <run name>`, or by hand: copy
-the input and its data into a scratch folder, set the `FILE` path, and run
-`Mplus <input> /diagram`.
 
-Not used, and why: mixture models (`TYPE = MIXTURE`: the latent class
-analysis of Harvard Dataverse DVN/ICPFRE, the latent profile analysis in
-Zenodo 14575311 and the Bayesian known-class models of DVN/TPGPCR) produce no
-diagram in Mplus ("Mplus diagrams are currently not available for Mixture
-analysis"). The other Mader and Schoen models and the CFA of Zenodo 14575311
-were run but repeat structures already covered. The CFA of Zenodo 14601030
-(CC BY 4.0) is held back until the parser reads the abbreviated `USEV`
-keyword it uses (see `TODO.md`).
+To regenerate these: download the files named above into `docs/reference/public-models/<set>/` (set names are in `tools/mplus/run-public-models.py`) and run `python -I tools/mplus/run-public-models.py <run name>` with a new run name, or by hand: copy the input and its data into a scratch folder, set the `FILE` path, and run `Mplus <input> /diagram`.
+
+Not used, and why: mixture models (`TYPE = MIXTURE`: the latent class analysis of Harvard Dataverse DVN/ICPFRE, the latent profile analysis in Zenodo 14575311 and the Bayesian known-class models of DVN/TPGPCR) produce no diagram in Mplus ("Mplus diagrams are currently not available for Mixture analysis"). The other Mader and Schoen models and the CFA of Zenodo 14575311 were run but repeat structures already covered. The CFA of Zenodo 14601030 (CC BY 4.0) is held back until the parser reads the abbreviated `USEV` keyword it uses (see `TODO.md`).
 
 ## Regenerating
 
