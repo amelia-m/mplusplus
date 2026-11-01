@@ -18,6 +18,22 @@ describe('valueEqual', () => {
     expect(valueEqual({}, { shape: undefined })).toBe(true);
     expect(valueEqual({ shape: null }, {})).toBe(false);
   });
+
+  it('arrays compare by length and elements, not by key union (an [1] equalled [1, undefined])', () => {
+    expect(valueEqual([1], [1, undefined])).toBe(false);
+    expect(valueEqual([1, undefined], [1])).toBe(false);
+    expect(valueEqual([1, undefined], [1, undefined])).toBe(true);
+  });
+
+  it('values that are not plain objects or arrays are equal only when identical (a Map equalled any Map)', () => {
+    const m = new Map([['a', 1]]);
+    expect(valueEqual(m, m)).toBe(true);
+    expect(valueEqual(new Map([['a', 1]]), new Map([['b', 2]]))).toBe(false);
+    expect(valueEqual(new Set([1]), new Set([1]))).toBe(false);
+    expect(valueEqual(new Date(0), new Date(1))).toBe(false);
+    expect(valueEqual(new Map(), {})).toBe(false);
+    expect(valueEqual({}, Object.create(null))).toBe(false);
+  });
 });
 
 describe('mergeRecord', () => {

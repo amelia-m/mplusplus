@@ -108,17 +108,46 @@ export function historyEqual(a: HistorySlice, b: HistorySlice): boolean {
 }
 
 /**
- * Apply `patch` to the overrides of each id in `ids`. Returns `styles`
- * itself when no value changes, so the action can skip the write.
+ * `override` without its `undefined` fields, or `null` when nothing is left.
+ * An `undefined` field means "not overridden", so it is not stored (merged
+ * over a base style it would replace the base value with `undefined`).
+ */
+function compactOverride<T extends object>(override: T): T | null {
+  const out: Record<string, unknown> = {};
+  let empty = true;
+  for (const [k, v] of Object.entries(override)) {
+    if (v === undefined) continue;
+    out[k] = v;
+    empty = false;
+  }
+  return empty ? null : (out as T);
+}
+
+/**
+ * Apply `patch` to the overrides of each id in `ids`. A field set to
+ * `undefined` in `patch` clears that field, and an override left with no
+ * fields is deleted, so the map never holds an empty record. Returns
+ * `styles` itself when no value changes, so the action can skip the write.
  */
 function patchStyles<T extends object>(
   styles: Record<string, T>,
   ids: Iterable<string>,
   patch: T,
 ): Record<string, T> {
-  const updates: Record<string, T> = {};
-  for (const id of ids) updates[id] = { ...(styles[id] ?? {}), ...patch } as T;
-  return mergeRecord(styles, updates);
+  let next: Record<string, T> | null = null;
+  for (const id of ids) {
+    const has = Object.hasOwn(styles, id);
+    const merged = compactOverride({ ...(styles[id] ?? {}), ...patch } as T);
+    if (merged === null) {
+      if (!has) continue;
+      next ??= { ...styles };
+      delete next[id];
+    } else if (!has || !valueEqual(styles[id], merged)) {
+      next ??= { ...styles };
+      next[id] = merged;
+    }
+  }
+  return next ?? styles;
 }
 
 export const useStore = create<AppState & AppActions>()(

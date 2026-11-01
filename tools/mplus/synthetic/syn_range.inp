@@ -1,0 +1,14 @@
+TITLE: mplusplus synthetic fixture: list ranges for indicators and factors
+  (invented model and names; simulated data only)
+DATA: FILE IS syn_range.dat;
+VARIABLE:
+  NAMES ARE g1-g4 h1-h4 t2 e1 t1;
+  USEVARIABLES ARE g1-t2 t1;
+MODEL:
+  fg BY g1-g4*;
+  fg@1;
+  fh BY h1
+        h2-h4 (lh);
+  fg-fh ON t1;
+  t2 ON fg-fh;
+OUTPUT: STANDARDIZED;

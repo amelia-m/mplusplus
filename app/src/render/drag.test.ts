@@ -8,10 +8,10 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { select } from 'd3-selection';
-import { wireNodeDrag } from './drag.js';
+import { cancelNodeDrag, wireNodeDrag } from './drag.js';
 import type { GroupSelection } from './svg.js';
 import { useStore, type NodePosition } from '../state/store.js';
-import { endActiveGesture, isGestureActive } from '../state/gesture.js';
+import { endActiveGesture, isGestureActive, onGestureEnd } from '../state/gesture.js';
 
 const temporal = (useStore as unknown as {
   temporal: { getState(): { pastStates: unknown[]; undo(): void; clear(): void } };
@@ -19,13 +19,57 @@ const temporal = (useStore as unknown as {
 
 const pos = (x: number, y = 0): NodePosition => ({ x, y, width: 120, height: 56 });
 
+/** A 2D affine matrix (screen = M * local), with what d3's `pointer()` uses. */
+class FakeMatrix {
+  constructor(
+    readonly a: number,
+    readonly b: number,
+    readonly c: number,
+    readonly d: number,
+    readonly e: number,
+    readonly f: number,
+  ) {}
+  inverse(): FakeMatrix {
+    const { a, b, c, d, e, f } = this;
+    const det = a * d - b * c;
+    return new FakeMatrix(d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det);
+  }
+}
+
+/**
+ * The drag container (the nodes' parent). By default it has no SVG methods,
+ * so d3's `pointer()` falls back to `pageX` / `pageY`. Given a screen CTM it
+ * behaves like an SVG `g`: d3 maps client points through the CTM's inverse,
+ * and setting a new CTM stands in for a viewBox refit.
+ */
+class FakeContainer {
+  ctm: FakeMatrix | null = null;
+  get ownerSVGElement(): unknown {
+    if (!this.ctm) return undefined;
+    return {
+      createSVGPoint: () => ({
+        x: 0,
+        y: 0,
+        matrixTransform(m: FakeMatrix) {
+          return { x: m.a * this.x + m.c * this.y + m.e, y: m.b * this.x + m.d * this.y + m.f };
+        },
+      }),
+    };
+  }
+  getScreenCTM(): FakeMatrix | null {
+    return this.ctm;
+  }
+}
+
 /** A `g.node` stand-in: listeners, `data-id`, a style sink, a parent. */
 class FakeNode extends EventTarget {
   readonly style = { setProperty(): void {}, removeProperty(): void {} };
-  readonly parentNode = {};
   /** d3-drag binds touch listeners only where this exists (or maxTouchPoints). */
   ontouchstart = null;
-  constructor(private readonly id: string) {
+  constructor(
+    private readonly id: string,
+    readonly parentNode: FakeContainer = new FakeContainer(),
+  ) {
     super();
   }
   getAttribute(name: string): string | null {
@@ -89,6 +133,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // A test that failed mid-drag must not leave its session for the next one.
+  cancelNodeDrag();
   endActiveGesture();
   vi.runAllTimers();
 });
@@ -144,16 +190,105 @@ describe('mouse drag is unchanged by the shared behaviour (Q1)', () => {
   });
 });
 
-describe('drag start positions are read at the threshold, not the press (Q2)', () => {
-  it('does not re-apply a position that undo restored between press and threshold', () => {
+describe('drag start positions and pointer origin are read at the threshold, not the press (Q2, F2.3)', () => {
+  it('an undo between press and threshold neither re-applies the old position nor makes the node jump', () => {
     useStore.getState().setNodePositions({ a: pos(50) });
     wireNodeDrag(group, redraw);
     touch(node, 'touchstart', 3, 100, 100);
     temporal.getState().undo(); // a back to 10, before the drag has moved anything
     expect(useStore.getState().positions.a.x).toBe(10);
+    // Moves by the full pointer travel since the press, from where it is now.
     touch(node, 'touchmove', 3, 120, 100);
     expect(useStore.getState().positions.a.x).toBe(30);
-    touch(node, 'touchend', 3, 120, 100);
+    touch(node, 'touchmove', 3, 130, 100);
+    expect(useStore.getState().positions.a.x).toBe(40);
+    touch(node, 'touchend', 3, 130, 100);
+    expect(isGestureActive()).toBe(false);
+  });
+
+  it('a viewBox refit between press and threshold does not make the node jump (the press point was kept in the old mapping)', () => {
+    const container = new FakeContainer();
+    container.ctm = new FakeMatrix(1, 0, 0, 1, 0, 0); // screen = local
+    node = new FakeNode('a', container);
+    group = fakeGroup([node]);
+    wireNodeDrag(group, redraw);
+    // Press 90 px right of the node's x (10): screen 100, local 100.
+    touch(node, 'touchstart', 4, 100, 100);
+    // Refit before the crossing: screen = 2 * local + 30.
+    container.ctm = new FakeMatrix(2, 0, 0, 2, 30, 0);
+    const screenX = (localX: number): number => 2 * localX + 30;
+    // In the new mapping the press point (screen 100) sits this far right
+    // of the node; the drag must keep that screen offset under the pointer.
+    const grabOffset = 100 - screenX(10);
+
+    touch(node, 'touchmove', 4, 110, 100); // crossing: 10 screen px = 5 local
+    expect(useStore.getState().positions.a.x).toBe(15);
+    touch(node, 'touchmove', 4, 130, 100);
+    expect(useStore.getState().positions.a.x).toBe(25);
+    expect(130 - screenX(useStore.getState().positions.a.x)).toBe(grabOffset);
+    touch(node, 'touchend', 4, 130, 100);
+    expect(isGestureActive()).toBe(false);
+  });
+
+  it('a drag back to its press point under a fitted viewBox is a no-op (the origin drifted from d3 in the last bits)', () => {
+    const container = new FakeContainer();
+    container.ctm = new FakeMatrix(0.73, 0, 0, 0.73, 41.3, 12.7);
+    node = new FakeNode('a', container);
+    group = fakeGroup([node]);
+    wireNodeDrag(group, redraw);
+    touch(node, 'touchstart', 8, 357, 211);
+    touch(node, 'touchmove', 8, 400, 230);
+    touch(node, 'touchmove', 8, 357, 211);
+    touch(node, 'touchend', 8, 357, 211);
+    expect(useStore.getState().positions.a).toEqual(pos(10));
+    expect(temporal.getState().pastStates.length).toBe(0);
+  });
+});
+
+describe('a throwing gesture-end listener (review 2026-10-22)', () => {
+  it('neither kills the next drag by the same pointer nor makes cancelNodeDrag throw', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const off = onGestureEnd(() => {
+      throw new Error('listener boom');
+    });
+    try {
+      wireNodeDrag(group, redraw);
+      touch(node, 'touchstart', 9, 100, 100);
+      touch(node, 'touchmove', 9, 120, 100); // a at 30, gesture open
+      // The end was missed; the same pointer presses again and replaces it.
+      touch(node, 'touchstart', 9, 100, 100);
+      touch(node, 'touchmove', 9, 150, 100);
+      expect(useStore.getState().positions.a.x).toBe(80);
+      expect(() => cancelNodeDrag()).not.toThrow();
+      expect(isGestureActive()).toBe(false);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      off();
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe('cancelNodeDrag (F2.1)', () => {
+  it('a drag cancelled at file load writes no stale positions or undo entries afterwards (a drag survived a load)', () => {
+    wireNodeDrag(group, redraw);
+    touch(node, 'touchstart', 5, 100, 100);
+    touch(node, 'touchmove', 5, 110, 100);
+    touch(node, 'touchmove', 5, 130, 100);
+    expect(useStore.getState().positions.a.x).toBe(40);
+    expect(isGestureActive()).toBe(true);
+
+    cancelNodeDrag();
+    expect(isGestureActive()).toBe(false);
+    // What runLayout does next: load the new diagram and reset history.
+    useStore.setState({ positions: { a: pos(500) } });
+    temporal.getState().clear();
+
+    touch(node, 'touchmove', 5, 160, 100);
+    touch(node, 'touchmove', 5, 190, 100);
+    touch(node, 'touchend', 5, 190, 100);
+    expect(useStore.getState().positions.a.x).toBe(500);
+    expect(temporal.getState().pastStates.length).toBe(0);
     expect(isGestureActive()).toBe(false);
   });
 });

@@ -1,0 +1,21 @@
+TITLE: mplusplus synthetic fixture, data generation for syn_path
+  (invented model and names; simulated data only)
+MONTECARLO:
+  ! Mplus saves dependent variables first; NAMES follows the saved order.
+  NAMES ARE m1 d1 d2 k1 k2 k3;
+  NOBSERVATIONS = 400;
+  NREPS = 1;
+  SEED = 20261022;
+  SAVE = syn_path.dat;
+MODEL POPULATION:
+  [k1@0 k2@0 k3@0]; k1@1 k2@1 k3@1;
+  m1 ON k1*0.4 k2*0.3;
+  d1 ON m1*0.5 k3*0.2;
+  d2 ON m1*0.3 k1*0.25;
+  m1*0.6 d1*0.5 d2*0.6;
+  d1 WITH d2*0.15;
+MODEL:
+  m1 ON k1 k2;
+  d1 ON m1 k3;
+  d2 ON m1 k1;
+  d1 WITH d2;

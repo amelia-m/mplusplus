@@ -17,8 +17,11 @@ describe('parseDgm - corpus smoke tests', () => {
       expect(dgm.useVar.length).toBeGreaterThan(0);
       expect(dgm.modelStatements.length).toBeGreaterThan(0);
       expect(dgm.estimates.length).toBeGreaterThan(0);
-      expect(dgm.latents.length).toBeGreaterThan(0);
-      expect(dgm.observed.length).toBeGreaterThan(0);
+      // The groupings header lists latents exactly when the model defines
+      // factors; a path analysis (syn_path) has none.
+      const hasBy = dgm.modelStatements.some((s) => s.op === 'BY');
+      expect(dgm.latents.length > 0).toBe(hasBy);
+      expect(dgm.observed.length > 0).toBe(hasBy);
 
       // Every BY statement should have at least one indicator term.
       for (const s of dgm.modelStatements) {
@@ -278,5 +281,218 @@ describe('parseDgm - one modifier grammar for term lists and standalone pins (P2
     const self = statementsOf('y1@ 0.5;').find((s) => s.lhs === 'y1');
     expect(self).toBeDefined();
     expect(self!.rhs[0].fixed).toBeCloseTo(0.5, 10);
+  });
+});
+
+describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => {
+  const statementsOf = (input: string) =>
+    parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\n${input}`))
+      .modelStatements;
+
+  it('does not read `MODEL CONSTRAINT: NEW(...)` lines as phantom model statements', () => {
+    const stmts = statementsOf(
+      'MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\nNEW(a*0.5);\nNEW(b*0.3);',
+    );
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('does not read a statement-shaped line under `MODEL CONSTRAINT:` as a model statement', () => {
+    // Unlike `NEW(a*0.5)`, `y2 ON y1` parses as a statement, so only the
+    // section bound keeps it out.
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nMODEL CONSTRAINT:\ny2 ON y1;');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('stops at a later top-level command such as `OUTPUT:`', () => {
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\nOUTPUT:\nf ON y1;');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('still finds the MODEL block when other commands follow it on later lines', () => {
+    const stmts = statementsOf('ANALYSIS: ESTIMATOR = ML;\nMODEL: f BY y1 y2 y3;\nf@1;\nOUTPUT: STANDARDIZED;');
+    expect(stmts.map((s) => [s.op, s.lhs])).toEqual([
+      ['BY', 'f'],
+      ['WITH', 'f'],
+    ]);
+  });
+
+  it('does not read a `*` inside a `(label)` as a pin (`y3 (a*0.5);` phantom bug)', () => {
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\ny3 (a*0.5);');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+
+  it('rejects standalone pins whose name is not an identifier (`y1-y9@1;`, `[y1@0];`)', () => {
+    // y9 is not a variable, so `y1-y9` is not a list Mplus could expand.
+    const stmts = statementsOf('MODEL:\nf BY y1 y2 y3;\ny1-y9@1;\n[y1@0];');
+    expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
+  });
+});
+
+describe('parseDgm - spaced modifier values (F1.4, F1.5)', () => {
+  const byTerms = (model: string) =>
+    parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;\nMODEL:\n${model}`))
+      .modelStatements.find((s) => s.op === 'BY')!.rhs;
+
+  it('reads a spaced value with a leading plus, `y2* +0.5` (was read as a variable named +0.5)', () => {
+    const rhs = byTerms('f BY y1 y2* +0.5 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].start).toBeCloseTo(0.5, 10);
+  });
+
+  it('reads a spaced negative value, `y2@ -1`', () => {
+    const rhs = byTerms('f BY y1 y2@ -1 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].fixed).toBe(-1);
+  });
+
+  it('reads a spaced value with an exponent, `y2@ 1e-3`', () => {
+    const rhs = byTerms('f BY y1 y2@ 1e-3 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].fixed).toBeCloseTo(0.001, 12);
+  });
+
+  it('a `(label)` closes a valueless modifier: the number after it is neither the start value nor a variable (phantom node `0.8`)', () => {
+    const rhs = byTerms('f BY y1 y2* (lab) 0.8 y3;');
+    expect(rhs.map((t) => t.name)).toEqual(['y1', 'y2', 'y3']);
+    expect(rhs[1].constraint).toBe('lab');
+    expect(rhs[1].start).toBeNull();
+  });
+});
+
+// syn_path.dgm: synthetic path analysis with no latent variables (Mplus 8.11).
+describe('parseDgm - a header with no latent groupings (groupings count 0 lost every estimate)', () => {
+  it('reads the estimate rows of syn_path.dgm, whose groupings count is 0', () => {
+    const dgm = parseDgm(readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8'));
+    expect(dgm.header.groupings).toEqual([]);
+    expect(dgm.header.allVariables).toEqual(['m1', 'd1', 'd2', 'k1', 'k2', 'k3']);
+    const paths = dgm.estimates.filter((e) => e.code === 1).map((e) => `${e.from}->${e.to}`);
+    expect(paths).toEqual(['k1->m1', 'k2->m1', 'm1->d1', 'k3->d1', 'm1->d2', 'k1->d2']);
+    const k1m1 = dgm.estimates.find((e) => e.code === 1 && e.from === 'k1' && e.to === 'm1');
+    expect(k1m1?.value).toBeCloseTo(0.446, 3);
+    expect(k1m1?.se).toBeCloseTo(0.04, 3);
+  });
+
+  it('returns no estimates, without throwing, for a header with 0 groupings and no rows', () => {
+    const text = ['TITLE: t', 'MODEL: y1 ON x1;', 'INPUT_END', 'y1 x1', '2', '1 0', '0', '0', ''].join('\n');
+    const dgm = parseDgm(text);
+    expect(dgm.header.groupings).toEqual([]);
+    expect(dgm.estimates).toEqual([]);
+  });
+});
+
+/**
+ * Mplus list function (User's Guide v8, ch. 17 pp. 730-732 and 736-738;
+ * ch. 15 pp. 597 and 599-600): a hyphen between two names denotes every
+ * variable from the first to the last in list order. Observed variables are
+ * ordered by USEVARIABLES (NAMES when there is none), latents by the order of
+ * their BY statements.
+ */
+describe('parseDgm - list ranges (y1-y3 kept as one node name)', () => {
+  const parse = (variable: string, model: string) =>
+    parseDgm(synthDgm(`VARIABLE: ${variable}\nMODEL:\n${model}`));
+  const statements = (variable: string, model: string) => parse(variable, model).modelStatements;
+  const names = (terms: { name: string }[]) => terms.map((t) => t.name);
+
+  it('expands `f BY y1-y3` into three indicators, in NAMES order when there is no USEVARIABLES', () => {
+    const by = statements('NAMES = y1 y2 y3;', 'f BY y1-y3;').find((s) => s.op === 'BY')!;
+    expect(names(by.rhs)).toEqual(['y1', 'y2', 'y3']);
+  });
+
+  it('takes the order from USEVARIABLES, even when it lists every NAMES variable (Mplus 8.11)', () => {
+    const by = statements(
+      'NAMES = y1 y2 y3 y4;\nUSEVARIABLES = y1 y3 y2 y4;',
+      'f BY y1-y2;',
+    ).find((s) => s.op === 'BY')!;
+    expect(names(by.rhs)).toEqual(['y1', 'y3', 'y2']);
+  });
+
+  it('expands by list position, not by name stem (`a1-c1`)', () => {
+    const by = statements('NAMES = a1 b1 c1 d1;', 'f BY a1-c1;').find((s) => s.op === 'BY')!;
+    expect(names(by.rhs)).toEqual(['a1', 'b1', 'c1']);
+  });
+
+  it('generates NAMES lists: numbered, zero-padded and lettered', () => {
+    const dgm = parse('NAMES = y1-y3 k08-k10 itema-itemc;', 'f BY y1;');
+    expect(dgm.variables).toEqual(
+      ['y1', 'y2', 'y3', 'k08', 'k09', 'k10', 'itema', 'itemb', 'itemc'],
+    );
+  });
+
+  it('expands USEVARIABLES ranges by NAMES position', () => {
+    const dgm = parse('NAMES = y1 y2 y3 x1 e1;\nUSEVARIABLES = y2-x1;', 'f BY y2;');
+    expect(dgm.useVar).toEqual(['y2', 'y3', 'x1']);
+  });
+
+  it('orders latents by their BY statements, wherever the range is used', () => {
+    const stmts = statements(
+      'NAMES = y1 y2 x1 x2;',
+      'fb-fa ON x1;\nx2 ON fb-fa;\nfb BY y1;\nfa BY y2;',
+    );
+    const on = stmts.filter((s) => s.op === 'ON');
+    expect(on.map((s) => s.lhs)).toEqual(['fb', 'fa', 'x2']);
+    expect(names(on[2].rhs)).toEqual(['fb', 'fa']);
+  });
+
+  it('a range on the left of WITH implies one statement per variable', () => {
+    const stmts = statements('NAMES = y1 y2 y3;', 'y1-y2 WITH y3;');
+    expect(stmts.map((s) => [s.op, s.lhs, names(s.rhs).join(' ')])).toEqual([
+      ['WITH', 'y1', 'y3'],
+      ['WITH', 'y2', 'y3'],
+    ]);
+  });
+
+  it('applies a modifier on a range to every variable in it (`*0.5`, `@1`, `(a)`)', () => {
+    const rhsOf = (model: string) =>
+      statements('NAMES = y1 y2 y3 y4;', model).find((s) => s.op === 'BY')!.rhs;
+    const free = rhsOf('f BY y1 y2-y4*0.5;');
+    expect(names(free)).toEqual(['y1', 'y2', 'y3', 'y4']);
+    expect(free.slice(1).every((t) => t.free && t.start === 0.5)).toBe(true);
+    expect(free[0].free).toBe(false);
+    const fixed = rhsOf('f BY y1 y2-y4@1;');
+    expect(fixed.slice(1).every((t) => t.fixed === 1)).toBe(true);
+    const labelled = rhsOf('f BY y1\n y2-y4 (a);');
+    expect(labelled.map((t) => t.constraint)).toEqual([null, 'a', 'a', 'a']);
+  });
+
+  it('expands a standalone pin on a range (`y1-y3@1;`) into one pin per variable', () => {
+    const pins = statements('NAMES = y1 y2 y3;', 'f BY y1 y2 y3;\ny1-y3@1;').filter(
+      (s) => s.op === 'WITH',
+    );
+    expect(pins.map((s) => [s.lhs, s.rhs[0].fixed])).toEqual([
+      ['y1', 1],
+      ['y2', 1],
+      ['y3', 1],
+    ]);
+  });
+
+  it('leaves a range it cannot resolve as written (reversed, unknown endpoint, observed to latent)', () => {
+    const by = statements(
+      'NAMES = y1 y2 y3;',
+      'f BY y3-y1 y1-y9 y3-f;',
+    ).find((s) => s.op === 'BY')!;
+    expect(names(by.rhs)).toEqual(['y3-y1', 'y1-y9', 'y3-f']);
+  });
+});
+
+// syn_cint.dgm: the syn_sem model and data, run with `OUTPUT: CINTERVAL`
+// (Mplus 8.11), which adds the 95% limits to every numeric row.
+describe('parseDgm - rows with confidence limits (CINTERVAL rows were dropped)', () => {
+  const read = (name: string) => parseDgm(readFileSync(join(DGM_DIR, name), 'utf8')).estimates;
+
+  it('reads the same estimates as the run without CINTERVAL, plus the limits', () => {
+    const cint = read('syn_cint.dgm');
+    const plain = read('syn_sem.dgm');
+    const strip = (rows: typeof cint) => rows.map(({ ci: _ci, ...rest }) => rest);
+    expect(strip(cint)).toEqual(strip(plain));
+    expect(plain.every((r) => r.ci === null)).toBe(true);
+    for (const r of cint) expect(r.ci === null, `${r.code} ${r.from} ${r.to}`).toBe(r.code === 91);
+  });
+
+  it('reads the limits of an edge row and of a variance row', () => {
+    const cint = read('syn_cint.dgm');
+    const loading = cint.find((r) => r.code === 1 && r.from === 'fa' && r.to === 'a1');
+    expect(loading).toMatchObject({ value: 0.805, se: 0.044, ci: { lower: 0.719, upper: 0.891 } });
+    const residual = cint.find((r) => r.code === 4 && r.from === 'a1');
+    expect(residual).toMatchObject({ to: null, value: 0.489, se: 0.045, ci: { lower: 0.4, upper: 0.577 } });
   });
 });

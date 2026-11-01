@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
-import { buildGraph } from './graph.js';
+import { buildGraph, matchEdgeForRow } from './graph.js';
 
 const DGM_DIR = resolve(__dirname, '../../../dgm');
 const fixtures = readdirSync(DGM_DIR).filter((f) => f.endsWith('.dgm'));
@@ -72,6 +72,51 @@ describe('buildGraph - syn_twofactor.dgm', () => {
     const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_twofactor.dgm'), 'utf8')));
     const covar = graph.edges.filter((e) => e.kind === 'COVAR');
     expect(covar.map((e) => [e.from, e.to].sort().join('|'))).toEqual(['fp|fq']);
+  });
+});
+
+// syn_path.dgm / syn_range.dgm: synthetic fixtures (Mplus 8.11). See dgm/README.md.
+describe('buildGraph - syn_path.dgm (no latents: every path lost its estimate)', () => {
+  it('puts an unstandardized and a STDYX estimate on every regression path', () => {
+    const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8')));
+    const on = graph.edges.filter((e) => e.kind === 'ON');
+    expect(on.map((e) => e.id).sort()).toEqual(
+      ['ON:k1->d2', 'ON:k1->m1', 'ON:k2->m1', 'ON:k3->d1', 'ON:m1->d1', 'ON:m1->d2'],
+    );
+    for (const e of on) {
+      expect(e.unstd, e.id).not.toBeNull();
+      expect(e.stdyx, e.id).not.toBeNull();
+    }
+    expect(graph.nodes.every((n) => n.kind === 'observed')).toBe(true);
+  });
+});
+
+describe('buildGraph - syn_range.dgm (list ranges became one node named y1-y3)', () => {
+  const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_range.dgm'), 'utf8')));
+
+  it('gives one BY edge per indicator, each with its estimate', () => {
+    const by = graph.edges.filter((e) => e.kind === 'BY');
+    expect(by.map((e) => e.id).sort()).toEqual([
+      'BY:fg->g1', 'BY:fg->g2', 'BY:fg->g3', 'BY:fg->g4',
+      'BY:fh->h1', 'BY:fh->h2', 'BY:fh->h3', 'BY:fh->h4',
+    ]);
+    for (const e of by) expect(e.unstd, e.id).not.toBeNull();
+    expect(by.find((e) => e.id === 'BY:fg->g2')!.free).toBe(true);
+    expect(by.filter((e) => e.constraint === 'lh').map((e) => e.to).sort()).toEqual(['h2', 'h3', 'h4']);
+  });
+
+  it('expands latent ranges on both sides of ON, and synthesizes no fallback ON edges', () => {
+    const on = graph.edges.filter((e) => e.kind === 'ON');
+    expect(on.map((e) => e.id).sort()).toEqual(
+      ['ON:fg->t2', 'ON:fh->t2', 'ON:t1->fg', 'ON:t1->fh'],
+    );
+    for (const e of on) expect(e.unstd, e.id).not.toBeNull();
+  });
+
+  it('builds nodes from the expanded USEVARIABLES range `g1-t2` (no node g1-t2, none for the unused e1)', () => {
+    expect(graph.nodes.map((n) => n.id).sort()).toEqual(
+      ['fg', 'fh', 'g1', 'g2', 'g3', 'g4', 'h1', 'h2', 'h3', 'h4', 't1', 't2'],
+    );
   });
 });
 
@@ -193,10 +238,61 @@ describe('buildGraph - estimate rows prefer exact direction (P1)', () => {
     expect(w?.unstd).toBeNull();
   });
 
-  it('a directed row with only a reversed WITH pair falls back to an ON edge', () => {
-    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', ['11 1 y2 y1 0.250 0.080']);
+  it('a directed row (codes 1, 11, 21, 31) with only a reversed WITH pair falls back to an ON edge', () => {
+    for (const code of [1, 11, 21, 31]) {
+      const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', [`${code} 1 y2 y1 0.250 0.080`]);
+      const on = g.edges.find((e) => e.id === 'ON:y2->y1');
+      expect(on, `code ${code}`).toBeDefined();
+      const w = g.edges.find((e) => e.kind === 'WITH');
+      expect(w?.unstd, `code ${code}`).toBeNull();
+      expect(w?.stdyx, `code ${code}`).toBeNull();
+      if (code === 11) expect(on!.stdyx?.value).toBeCloseTo(0.25, 3);
+    }
+  });
+
+  it('a reversed code-91 row labels the WITH edge instead of synthesizing an ON edge', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', ['91 1 y2 y1 cv']);
+    expect(g.edges.find((e) => e.kind === 'WITH')?.constraint).toBe('cv');
+    expect(g.edges.filter((e) => e.kind === 'ON')).toEqual([]);
+  });
+});
+
+describe('buildGraph - estimate rows prefer an edge of the matching type (F1.1)', () => {
+  it('`y2 WITH y1; y1 ON y2;` puts rows `1`/`11 1 y2 y1` on the ON edge, not the WITH (estimates on WITH bug)', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny2 WITH y1;\ny1 ON y2;', [
+      '1 1 y2 y1 0.500 0.100',
+      '11 1 y2 y1 0.400 0.100',
+    ]);
     const on = g.edges.find((e) => e.id === 'ON:y2->y1');
-    expect(on?.stdyx?.value).toBeCloseTo(0.25, 3);
-    expect(g.edges.find((e) => e.kind === 'WITH')?.stdyx).toBeNull();
+    expect(on?.unstd?.value).toBeCloseTo(0.5, 3);
+    expect(on?.stdyx?.value).toBeCloseTo(0.4, 3);
+    const w = g.edges.find((e) => e.id === 'WITH:y2->y1');
+    expect(w?.unstd).toBeNull();
+    expect(w?.stdyx).toBeNull();
+  });
+
+  it('a directed row next to a WITH pair gives the same ON edge whichever way the WITH was written (it landed on `y2 WITH y1`)', () => {
+    for (const decl of ['y2 WITH y1;', 'y1 WITH y2;']) {
+      const g = synthGraph(`f BY y1 y2 y3;\n${decl}`, ['1 1 y2 y1 0.500 0.100']);
+      expect(g.edges.find((e) => e.id === 'ON:y2->y1')?.unstd?.value, decl).toBeCloseTo(0.5, 3);
+      expect(g.edges.find((e) => e.kind === 'WITH')?.unstd, decl).toBeNull();
+    }
+  });
+
+  it('a covariance row (codes 2, 12, 22, 32) prefers a reversed WITH edge over an exact ON edge', () => {
+    const edges = synthGraph('f BY y1 y2 y3;\ny2 ON y1;\ny2 WITH y1;').edges;
+    for (const code of [2, 12, 22, 32]) {
+      expect(matchEdgeForRow(code, 'y1', 'y2', edges)?.id, `code ${code}`).toBe('WITH:y2->y1');
+    }
+    // A label row (91) has no parameter type: exact endpoints first.
+    expect(matchEdgeForRow(91, 'y1', 'y2', edges)?.id).toBe('ON:y1->y2');
+  });
+
+  it('a covariance row next to an ON edge gives a COVAR edge in either row order (it was absorbed by `ON:y1->y2`)', () => {
+    for (const row of ['2 1 y1 y2 0.100 0.020', '2 1 y2 y1 0.100 0.020', '12 1 y1 y2 0.300 0.050']) {
+      const g = synthGraph('f BY y1 y2 y3;\ny2 ON y1;', [row]);
+      expect(g.edges.filter((e) => e.kind === 'COVAR'), row).toHaveLength(1);
+      expect(g.edges.filter((e) => e.kind === 'ON').map((e) => e.id), row).toEqual(['ON:y1->y2']);
+    }
   });
 });

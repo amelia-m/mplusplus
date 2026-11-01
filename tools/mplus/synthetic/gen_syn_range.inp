@@ -1,0 +1,31 @@
+TITLE: mplusplus synthetic fixture, data generation for syn_range
+  (invented model and names; simulated data only)
+MONTECARLO:
+  ! Mplus saves dependent variables first; NAMES follows the saved order.
+  ! e1 is generated but left out of the fitted model (USEVARIABLES subset).
+  NAMES ARE g1 g2 g3 g4 h1 h2 h3 h4 t2 e1 t1;
+  NOBSERVATIONS = 400;
+  NREPS = 1;
+  SEED = 20261023;
+  SAVE = syn_range.dat;
+MODEL POPULATION:
+  [t1@0]; t1@1;
+  fg BY g1*0.8 g2*0.7 g3*0.7 g4*0.6;
+  fh BY h1*1 h2*0.8 h3*0.8 h4*0.8;
+  fg ON t1*0.3;
+  fh ON t1*0.4;
+  fg*0.9; fh*0.5;
+  g1*0.4 g2*0.4 g3*0.4 g4*0.4;
+  h1*0.5 h2*0.5 h3*0.5 h4*0.5;
+  t2 ON fg*0.3 fh*0.4;
+  t2*0.6;
+  e1 ON t1*0.2;
+  e1*0.9;
+MODEL:
+  fg BY g1* g2 g3 g4;
+  fg@1;
+  fh BY h1 h2 h3 h4;
+  fg ON t1;
+  fh ON t1;
+  t2 ON fg fh;
+  e1 ON t1;
