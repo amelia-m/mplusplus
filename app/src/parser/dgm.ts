@@ -50,7 +50,7 @@ export interface EstimateRow {
   from: string;
   /** `null` for residual/variance rows that only describe a single variable. */
   to: string | null;
-  /** Numeric estimate. `null` for constraint-label rows (code 91). */
+  /** Numeric estimate. `null` for constraint-label rows (codes 91-95). */
   value: number | null;
   /** Standard error. `null` for constraint-label rows. */
   se: number | null;
@@ -59,7 +59,7 @@ export interface EstimateRow {
    * when the model was run with `OUTPUT: CINTERVAL`; otherwise `null`.
    */
   ci: { lower: number; upper: number } | null;
-  /** Constraint label, only set for code 91 rows. */
+  /** Constraint label, only set for constraint-label rows (`LABEL_CODE_NAMES`). */
   constraintLabel: string | null;
 }
 
@@ -636,6 +636,21 @@ function looksLikeVariableList(line: string): boolean {
 
 const NUM_RE = /^-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?$/;
 
+/**
+ * Constraint-label row codes, 90 plus the parameter type, and how many
+ * variable names the row gives before the label: `91 g from to la`
+ * (loading or regression), `92 g a b cv` (covariance), `94 g y rv`
+ * (residual variance), `95 g f lv` (latent variance). Settled by a
+ * synthetic Mplus 8.11 run (`dgm/syn_label.dgm`); 95 is from User's Guide
+ * `ex5.20`. Code 93 has not been seen.
+ */
+const LABEL_CODE_NAMES: ReadonlyMap<number, 1 | 2> = new Map([
+  [91, 2],
+  [92, 2],
+  [94, 1],
+  [95, 1],
+]);
+
 function parseEstimateRow(line: string): EstimateRow | null {
   const tokens = line.split(/\s+/);
   if (tokens.length < 4) return null;
@@ -644,18 +659,19 @@ function parseEstimateRow(line: string): EstimateRow | null {
   const group = Number(tokens[1]);
   if (!Number.isFinite(code) || !Number.isFinite(group)) return null;
 
-  // Constraint-label row: `91 group from to label` (no SE; label is non-numeric).
-  if (code === 91) {
-    if (tokens.length < 5) return null;
+  // Constraint-label row: the parameter's names, then its label (no estimate).
+  const labelNames = LABEL_CODE_NAMES.get(code);
+  if (labelNames !== undefined) {
+    if (tokens.length < 3 + labelNames) return null;
     return {
       code,
       group,
       from: tokens[2],
-      to: tokens[3],
+      to: labelNames === 2 ? tokens[3] : null,
       value: null,
       se: null,
       ci: null,
-      constraintLabel: tokens.slice(4).join(' '),
+      constraintLabel: tokens.slice(2 + labelNames).join(' '),
     };
   }
 

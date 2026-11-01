@@ -35,9 +35,11 @@ describe('parseDgm - corpus smoke tests', () => {
       // expected vocabulary: the last digit is the parameter type (1 loading
       // or regression, 2 covariance, 4 residual variance, 5 latent variance),
       // the tens digit the estimate type (0 unstandardized, 1 STDYX, 2 STDY,
-      // 3 STD); 91 is a constraint label. 2x codes appear in Mplus output
-      // run with OUTPUT: STANDARDIZED.
-      const allowed = new Set([1, 2, 4, 5, 11, 12, 14, 15, 21, 22, 24, 25, 31, 32, 34, 35, 91]);
+      // 3 STD); 9x is the constraint label of a type-x parameter. 2x codes
+      // appear in Mplus output run with OUTPUT: STANDARDIZED.
+      const allowed = new Set([
+        1, 2, 4, 5, 11, 12, 14, 15, 21, 22, 24, 25, 31, 32, 34, 35, 91, 92, 94, 95,
+      ]);
       for (const e of dgm.estimates) {
         expect(allowed.has(e.code)).toBe(true);
       }
@@ -104,6 +106,29 @@ describe('parseDgm - syn_sem.dgm specific', () => {
       dgm.estimates.filter((e) => e.code === 91).map((e) => e.constraintLabel ?? ''),
     );
     expect([...labels91].sort()).toEqual(['la', 'lb']);
+  });
+});
+
+describe('parseDgm - constraint-label rows of every type (syn_label.dgm)', () => {
+  const dgm = parseDgm(readFileSync(join(DGM_DIR, 'syn_label.dgm'), 'utf8'));
+  const rows = (code: number) =>
+    dgm.estimates
+      .filter((e) => e.code === code)
+      .map((e) => [e.from, e.to, e.constraintLabel, e.value, e.se]);
+
+  it('reads 92 (covariance) and 94 (residual variance) label rows, which it dropped', () => {
+    expect(rows(91)).toContainEqual(['fa', 'a2', 'la', null, null]);
+    expect(rows(92)).toContainEqual(['c4', 'b4', 'cv', null, null]);
+    expect(rows(92)).toContainEqual(['x1', 'x2', 'cv', null, null]);
+    expect(rows(94)).toContainEqual(['a1', null, 'rv', null, null]);
+    expect(rows(94)).toContainEqual(['a2', null, 'rv', null, null]);
+  });
+
+  it('reads a 95 (latent variance) label row, as in User\'s Guide ex5.20, which it dropped', () => {
+    const d = parseDgm(synthDgm('MODEL:\nf BY y1 y2 y3;\nf (lv);', ['95 1 f lv']));
+    expect(d.estimates).toEqual([
+      expect.objectContaining({ code: 95, from: 'f', to: null, constraintLabel: 'lv', value: null }),
+    ]);
   });
 });
 
