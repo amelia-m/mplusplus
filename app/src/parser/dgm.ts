@@ -89,28 +89,40 @@ const INPUT_END_RE = /^\s*INPUT_END\s*$/m;
 
 /**
  * Regex source for the separator between an Mplus option name and its value.
- * Mplus accepts `=`, `ARE` and `IS` interchangeably (`NAMES = ...`,
- * `NAMES ARE ...`, `NAMES IS ...`). The word forms need whitespace on both
+ * Mplus accepts `=`, `ARE`, `IS` and plain whitespace interchangeably
+ * (`NAMES = ...`, `NAMES ARE ...`, `NAMES IS ...`, `NAMES ...`; the last
+ * checked with Mplus 8.11, 2026-11-01). The word forms need whitespace on both
  * sides so a value starting with e.g. `arena` is not mistaken for `ARE`.
  */
-const OPTION_ASSIGN = String.raw`(?:\s*=\s*|\s+(?:ARE|IS)\s+)`;
+const OPTION_ASSIGN = String.raw`(?:\s*=\s*|\s+(?:ARE|IS)\s+|\s+)`;
+
+/**
+ * Regex source for an Mplus keyword or any shortening of it: commands and
+ * options can be shortened to four or more letters (User's Guide v8; `USEV`
+ * runs and `USE` is an unknown option in Mplus 8.11). Case is left to the
+ * caller's `i` flag. A keyword does not end the match itself, so the caller
+ * follows it with `\b` or an assignment.
+ */
+function keyword(word: string): string {
+  let tail = '';
+  for (const letter of [...word.slice(4)].reverse()) tail = `(?:${letter}${tail})?`;
+  return word.slice(0, 4) + tail;
+}
+
+/** Regex for one option of the VARIABLE command, capturing its value. */
+function optionRe(name: string): RegExp {
+  return new RegExp(`(?:^|;)\\s*${keyword(name)}${OPTION_ASSIGN}([\\s\\S]*?);`, 'i');
+}
 
 export function parseDgm(text: string): DgmFile {
   const split = splitOnInputEnd(text);
   const inputBlock = split.before + 'INPUT_END\n';
 
   const cleanedInput = stripCommentsAndJoin(split.before);
-  const variables = generateNamesList(
-    parseNamesList(
-      cleanedInput,
-      new RegExp(`VARIABLE\\s*:\\s*[\\s\\S]*?\\bNAMES${OPTION_ASSIGN}([\\s\\S]*?);`, 'i'),
-    ),
-  );
+  const variableCommand = variableSection(cleanedInput);
+  const variables = generateNamesList(parseNamesList(variableCommand, optionRe('NAMES')));
   const useVar = expandByPosition(
-    parseNamesList(
-      cleanedInput,
-      new RegExp(`\\bUSEVAR(?:IABLES)?${OPTION_ASSIGN}([\\s\\S]*?);`, 'i'),
-    ),
+    parseNamesList(variableCommand, optionRe('USEVARIABLES')),
     variables,
   );
   // List order for observed variables in MODEL ranges: USEVARIABLES, or
@@ -174,11 +186,44 @@ function parseNamesList(text: string, re: RegExp): string[] {
  * a new command, so it ends whatever section came before it. Model
  * statements never contain a colon, so they cannot match.
  */
-const SECTION_HEADER_RE =
-  /^[ \t]*(?:TITLE|DATA|VARIABLE|DEFINE|ANALYSIS|MODEL|OUTPUT|SAVEDATA|PLOT|MONTECARLO)\b[^:;\n]*:/im;
+const SECTION_HEADER_RE = new RegExp(
+  `^[ \\t]*(?:${[
+    'TITLE',
+    'DATA',
+    'VARIABLE',
+    'DEFINE',
+    'ANALYSIS',
+    'MODEL',
+    'OUTPUT',
+    'SAVEDATA',
+    'PLOT',
+    'MONTECARLO',
+  ]
+    .map(keyword)
+    .join('|')})\\b[^:;\\n]*:`,
+  'im',
+);
 
 /** The `MODEL:` command itself, at the start of a line. */
-const MODEL_HEADER_RE = /^[ \t]*MODEL[ \t]*:/im;
+const MODEL_HEADER_RE = new RegExp(`^[ \\t]*${keyword('MODEL')}[ \\t]*:`, 'im');
+
+/** The `VARIABLE:` command itself, at the start of a line. */
+const VARIABLE_HEADER_RE = new RegExp(`^[ \\t]*${keyword('VARIABLE')}[ \\t]*:`, 'gim');
+
+/**
+ * The body of the VARIABLE command, up to the next command header. Options are
+ * read from here only, so a TITLE or a model statement that happens to start
+ * with an option name is not taken for one. The last header wins, because a
+ * TITLE line can look like one (`Variable: age`) and TITLE comes first.
+ */
+function variableSection(text: string): string {
+  const headers = [...text.matchAll(VARIABLE_HEADER_RE)];
+  if (headers.length === 0) return '';
+  const last = headers[headers.length - 1];
+  const rest = text.slice(last.index + last[0].length);
+  const next = SECTION_HEADER_RE.exec(rest);
+  return next ? rest.slice(0, next.index) : rest;
+}
 
 /** A MODEL statement split at its operator, before list ranges are expanded. */
 interface SplitStmt {

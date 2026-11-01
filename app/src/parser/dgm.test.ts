@@ -230,6 +230,54 @@ describe('parseDgm - ARE / IS option syntax', () => {
     expect(dgm.variables).toEqual(['y1', 'y2', 'y3']);
     expect(dgm.useVar).toEqual(['y1', 'y2']);
   });
+
+  it('parses an option with no `=`, `ARE` or `IS`', () => {
+    const dgm = parseDgm(synthDgm('VARIABLE: NAMES y1 y2 y3;\nUSEVARIABLES y1 y2;\nMODEL:\nf BY y1 y2;'));
+    expect(dgm.variables).toEqual(['y1', 'y2', 'y3']);
+    expect(dgm.useVar).toEqual(['y1', 'y2']);
+  });
+
+  it('reads options only from the VARIABLE command, at the start of a statement', () => {
+    const dgm = parseDgm(
+      synthDgm(
+        [
+          'TITLE: usevariables in the title;',
+          'Variable: age and such',
+          'DATA: FILE IS d.dat;',
+          'VARIABLE: NAMES = y1 usev;',
+          'CATEGORICAL ARE usev y1;',
+          'MODEL:',
+          'usevar BY y1 usev;',
+        ].join('\n'),
+      ),
+    );
+    expect(dgm.variables).toEqual(['y1', 'usev']);
+    expect(dgm.useVar).toEqual([]);
+  });
+});
+
+describe('parseDgm - keywords shortened to four or more letters', () => {
+  it.each(['USEV', 'USEVA', 'USEVAR', 'USEVARIABLE', 'usevariables'])('reads `%s`', (word) => {
+    const dgm = parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\n${word} = y1 y2;\nMODEL:\nf BY y1 y2;`));
+    expect(dgm.useVar).toEqual(['y1', 'y2']);
+  });
+
+  it('reads `NAME`', () => {
+    expect(parseDgm(synthDgm('VARIABLE: NAME = y1 y2;\nMODEL:\nf BY y1 y2;')).variables).toEqual(['y1', 'y2']);
+  });
+
+  it.each(['USE = y1 y2;', 'USEVX = y1 y2;'])('does not read `%s`, which Mplus rejects', (option) => {
+    const dgm = parseDgm(synthDgm(`VARIABLE: NAMES = y1 y2 y3;\n${option}\nMODEL:\nf BY y1 y2;`));
+    expect(dgm.useVar).toEqual([]);
+  });
+
+  it('reads shortened command headers, and a short header ends the MODEL block', () => {
+    const dgm = parseDgm(
+      synthDgm('VARI: NAMES = y1 y2 y3;\nMODE:\nf BY y1 y2 y3;\nMODE CONS:\ny1 ON y2;\nOUTP:\ny2 ON y3;'),
+    );
+    expect(dgm.variables).toEqual(['y1', 'y2', 'y3']);
+    expect(dgm.modelStatements.map((s) => s.op)).toEqual(['BY']);
+  });
 });
 
 describe('parseDgm - modifiers with missing or negative values (R7, R8)', () => {
