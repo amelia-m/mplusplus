@@ -285,6 +285,7 @@ describe('parseDgm - the WEIGHT option', () => {
     expect(parseY('WEIGHT IS w;').weight).toBe('w');
     expect(parseY('WEIG = w;').weight).toBe('w');
     expect(parseY('WEIGHT = w (SAMPLING);').weight).toBe('w');
+    expect(parseY('WEIGHT = w(SAMPLING);').weight).toBe('w');
   });
 
   it('gives null for an unweighted analysis', () => {

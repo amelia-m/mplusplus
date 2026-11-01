@@ -15,8 +15,8 @@ describe('placeCaption', () => {
     const { viewBox, at, fontSize } = placeCaption(vb);
 
     expect(at.x).toBe(0);
-    expect(at.y - fontSize).toBeGreaterThanOrEqual(vb.y + vb.height - 0.1 * fontSize);
-    expect(at.y).toBeLessThan(viewBox.y + viewBox.height);
+    expect(at.y).toBeGreaterThan(vb.y + vb.height);
+    expect(at.y + 0.25 * fontSize).toBeLessThan(viewBox.y + viewBox.height);
     expect({ ...viewBox, height: vb.height }).toEqual(vb);
   });
 

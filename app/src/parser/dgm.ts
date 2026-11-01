@@ -129,7 +129,8 @@ export function parseDgm(text: string): DgmFile {
     parseNamesList(variableCommand, optionRe('USEVARIABLES')),
     variables,
   );
-  const weight = parseNamesList(variableCommand, optionRe('WEIGHT'))[0] ?? null;
+  // A qualifier may follow the name, with or without a space: `w (SAMPLING)`.
+  const weight = parseNamesList(variableCommand, optionRe('WEIGHT'))[0]?.split('(')[0] ?? null;
   // List order for observed variables in MODEL ranges: USEVARIABLES, or
   // NAMES when there is no USEVARIABLES (see `rangeByPosition`).
   const modelStatements = parseModelBlock(cleanedInput, useVar.length > 0 ? useVar : variables);
