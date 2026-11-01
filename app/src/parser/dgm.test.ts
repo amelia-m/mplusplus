@@ -371,6 +371,13 @@ describe('parseDgm - MODEL block ends at the next section header (F1.3)', () => 
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);
   });
 
+  it('is not hidden by a TITLE line that looks like the MODEL header', () => {
+    const stmts = parseDgm(
+      synthDgm('TITLE:\nMode: pilot\nDATA: FILE IS d.dat;\nVARIABLE: NAMES = y1 y2;\nMODEL:\nf BY y1 y2;'),
+    ).modelStatements;
+    expect(stmts.map((s) => s.op)).toEqual(['BY']);
+  });
+
   it('stops at a later top-level command such as `OUTPUT:`', () => {
     const stmts = sectionStatements('MODEL:\nf BY y1 y2 y3;\nOUTPUT:\nf ON y1;');
     expect(stmts.map((s) => s.raw)).toEqual(['f BY y1 y2 y3']);

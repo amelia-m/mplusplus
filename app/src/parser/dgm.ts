@@ -119,7 +119,9 @@ export function parseDgm(text: string): DgmFile {
   const inputBlock = split.before + 'INPUT_END\n';
 
   const cleanedInput = stripCommentsAndJoin(split.before);
-  const variableCommand = variableSection(cleanedInput);
+  // Options are read from the VARIABLE command only, so a TITLE or a model
+  // statement that happens to start with an option name is not taken for one.
+  const variableCommand = commandBody(cleanedInput, VARIABLE_HEADER_RE) ?? '';
   const variables = generateNamesList(parseNamesList(variableCommand, optionRe('NAMES')));
   const useVar = expandByPosition(
     parseNamesList(variableCommand, optionRe('USEVARIABLES')),
@@ -205,20 +207,19 @@ const SECTION_HEADER_RE = new RegExp(
 );
 
 /** The `MODEL:` command itself, at the start of a line. */
-const MODEL_HEADER_RE = new RegExp(`^[ \\t]*${keyword('MODEL')}[ \\t]*:`, 'im');
+const MODEL_HEADER_RE = new RegExp(`^[ \\t]*${keyword('MODEL')}[ \\t]*:`, 'gim');
 
 /** The `VARIABLE:` command itself, at the start of a line. */
 const VARIABLE_HEADER_RE = new RegExp(`^[ \\t]*${keyword('VARIABLE')}[ \\t]*:`, 'gim');
 
 /**
- * The body of the VARIABLE command, up to the next command header. Options are
- * read from here only, so a TITLE or a model statement that happens to start
- * with an option name is not taken for one. The last header wins, because a
- * TITLE line can look like one (`Variable: age`) and TITLE comes first.
+ * The body of a command, up to the next command header, or null when the
+ * command is absent. `headerRe` must be global. The last header wins, because
+ * a TITLE line can look like one (`Model: pilot`) and TITLE comes first.
  */
-function variableSection(text: string): string {
-  const headers = [...text.matchAll(VARIABLE_HEADER_RE)];
-  if (headers.length === 0) return '';
+function commandBody(text: string, headerRe: RegExp): string | null {
+  const headers = [...text.matchAll(headerRe)];
+  if (headers.length === 0) return null;
   const last = headers[headers.length - 1];
   const rest = text.slice(last.index + last[0].length);
   const next = SECTION_HEADER_RE.exec(rest);
@@ -241,11 +242,8 @@ interface SplitStmt {
 function parseModelBlock(text: string, observedOrder: string[]): ModelStmt[] {
   // The MODEL block runs from `MODEL:` to the next command header
   // (`MODEL CONSTRAINT:`, `OUTPUT:`, ...) or the end of the input section.
-  const m = MODEL_HEADER_RE.exec(text);
-  if (!m) return [];
-  const rest = text.slice(m.index + m[0].length);
-  const next = SECTION_HEADER_RE.exec(rest);
-  const body = next ? rest.slice(0, next.index) : rest;
+  const body = commandBody(text, MODEL_HEADER_RE);
+  if (body === null) return [];
 
   // Split on `;` while ignoring inline whitespace/newlines. Each "statement"
   // ends in `;`. Discard empty fragments.
