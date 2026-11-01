@@ -132,6 +132,16 @@ describe('parseDgm - constraint-label rows of every type (syn_label.dgm)', () =>
   });
 });
 
+// dc_tol_sem.dgm: a published model (CC0, see dgm/README.md) run with
+// OUTPUT: CINTERVAL.
+describe('parseDgm - published model with confidence limits (dc_tol_sem.dgm)', () => {
+  it('reads all 105 estimate rows, each with limits (it read 0 before the CINTERVAL fix)', () => {
+    const dgm = parseDgm(readFileSync(join(DGM_DIR, 'dc_tol_sem.dgm'), 'utf8'));
+    expect(dgm.estimates).toHaveLength(105);
+    expect(dgm.estimates.filter((r) => r.ci === null)).toEqual([]);
+  });
+});
+
 /** Minimal synthetic .dgm: one latent `f` measured by y1..y3. */
 function synthDgm(input: string, rows: string[] = []): string {
   return [
