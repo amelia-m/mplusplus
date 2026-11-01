@@ -50,7 +50,7 @@ export interface EstimateRow {
   from: string;
   /** `null` for residual/variance rows that only describe a single variable. */
   to: string | null;
-  /** Numeric estimate. `null` for constraint-label rows (codes 91-95). */
+  /** Numeric estimate. `null` for constraint-label rows (`LABEL_CODE_NAMES`). */
   value: number | null;
   /** Standard error. `null` for constraint-label rows. */
   se: number | null;
