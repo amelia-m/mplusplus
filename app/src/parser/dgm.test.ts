@@ -280,6 +280,27 @@ describe('parseDgm - keywords shortened to four or more letters', () => {
   });
 });
 
+describe('parseDgm - the WEIGHT option', () => {
+  it('reads the weight variable, whichever form the option takes', () => {
+    expect(parseY('WEIGHT IS w;').weight).toBe('w');
+    expect(parseY('WEIG = w;').weight).toBe('w');
+    expect(parseY('WEIGHT = w (SAMPLING);').weight).toBe('w');
+  });
+
+  it('gives null for an unweighted analysis', () => {
+    expect(parseY('').weight).toBeNull();
+  });
+
+  it('is not misled by a variable named weight in NAMES', () => {
+    const dgm = parseDgm(synthDgm('VARIABLE: NAMES = weight y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;'));
+    expect(dgm.weight).toBeNull();
+  });
+
+  it('does not take BWEIGHT for WEIGHT', () => {
+    expect(parseY('BWEIGHT = b;').weight).toBeNull();
+  });
+});
+
 describe('parseDgm - modifiers with missing or negative values (R7, R8)', () => {
   it('leaves `fixed` null for `y2@` with no value in a term list', () => {
     const rhs = byTerms('f BY y1 y2@ y3;');

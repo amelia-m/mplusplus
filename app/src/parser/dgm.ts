@@ -76,6 +76,8 @@ export interface DgmFile {
   inputBlock: string;
   variables: string[];
   useVar: string[];
+  /** The VARIABLE command's WEIGHT variable; `null` for an unweighted analysis. */
+  weight: string | null;
   modelStatements: ModelStmt[];
   header: DgmHeader;
   estimates: EstimateRow[];
@@ -127,6 +129,7 @@ export function parseDgm(text: string): DgmFile {
     parseNamesList(variableCommand, optionRe('USEVARIABLES')),
     variables,
   );
+  const weight = parseNamesList(variableCommand, optionRe('WEIGHT'))[0] ?? null;
   // List order for observed variables in MODEL ranges: USEVARIABLES, or
   // NAMES when there is no USEVARIABLES (see `rangeByPosition`).
   const modelStatements = parseModelBlock(cleanedInput, useVar.length > 0 ? useVar : variables);
@@ -140,6 +143,7 @@ export function parseDgm(text: string): DgmFile {
     inputBlock,
     variables,
     useVar,
+    weight,
     modelStatements,
     header,
     estimates,

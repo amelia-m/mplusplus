@@ -1,7 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIEWBOX, contentViewBox, formatViewBox } from './viewBox.js';
+import {
+  DEFAULT_VIEWBOX,
+  contentViewBox,
+  formatViewBox,
+  placeCaption,
+} from './viewBox.js';
 
 const box = (x: number, y: number, width = 120, height = 56) => ({ x, y, width, height });
+
+describe('placeCaption', () => {
+  it('adds room so the text sits below the old view and inside the new one', () => {
+    const vb = { x: -40, y: -40, width: 500, height: 300 };
+
+    const { viewBox, at, fontSize } = placeCaption(vb);
+
+    expect(at.x).toBe(0);
+    expect(at.y - fontSize).toBeGreaterThanOrEqual(vb.y + vb.height - 0.1 * fontSize);
+    expect(at.y).toBeLessThan(viewBox.y + viewBox.height);
+    expect({ ...viewBox, height: vb.height }).toEqual(vb);
+  });
+
+  it('scales with a wide view, so it stays readable once the canvas shrinks it', () => {
+    expect(placeCaption({ x: 0, y: 0, width: 3500, height: 700 }).fontSize).toBe(50);
+    expect(placeCaption({ x: 0, y: 0, width: 300, height: 200 }).fontSize).toBe(14);
+  });
+});
 
 describe('contentViewBox (Z2)', () => {
   it('returns the default viewBox for an empty graph', () => {

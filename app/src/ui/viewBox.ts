@@ -77,6 +77,32 @@ export function contentViewBox(boxes: Iterable<Box>, options: ContentViewBoxOpti
   };
 }
 
+export interface CaptionPlacement {
+  /** `vb` with room added underneath for the caption. */
+  viewBox: ViewBox;
+  /** Start of the caption's baseline. */
+  at: Point;
+  fontSize: number;
+}
+
+/** Smallest caption, and the view width it shrinks to per unit of font size. */
+const CAPTION_MIN_FONT = 14;
+const CAPTION_WIDTHS_PER_FONT = 70;
+
+/**
+ * Place a caption under the content. The canvas scales the view to fit, so
+ * a fixed font size would be unreadable on a wide diagram: the size follows
+ * the view's width.
+ */
+export function placeCaption(vb: ViewBox): CaptionPlacement {
+  const fontSize = Math.max(CAPTION_MIN_FONT, vb.width / CAPTION_WIDTHS_PER_FONT);
+  return {
+    viewBox: { ...vb, height: vb.height + 1.2 * fontSize },
+    at: { x: vb.x + VIEWBOX_PADDING, y: vb.y + vb.height + 0.9 * fontSize },
+    fontSize,
+  };
+}
+
 export function formatViewBox(vb: ViewBox): string {
   return `${vb.x} ${vb.y} ${vb.width} ${vb.height}`;
 }

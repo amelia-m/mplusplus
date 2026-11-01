@@ -54,6 +54,7 @@ export type GroupSelection = Selection<SVGGElement, unknown, null, undefined>;
 export function setupSvg(svg: SVGSVGElement): {
   edgesG: GroupSelection;
   nodesG: GroupSelection;
+  captionG: GroupSelection;
   marqueeG: GroupSelection;
   defsG: Selection<SVGDefsElement, unknown, null, undefined>;
 } {
@@ -65,9 +66,33 @@ export function setupSvg(svg: SVGSVGElement): {
   // Order matters: edges below nodes; marquee on top of everything.
   const edgesG = root.append('g').attr('class', 'edges') as GroupSelection;
   const nodesG = root.append('g').attr('class', 'nodes') as GroupSelection;
+  const captionG = root.append('g').attr('class', 'caption') as GroupSelection;
   const marqueeG = root.append('g').attr('class', 'marquee') as GroupSelection;
 
-  return { edgesG, nodesG, marqueeG, defsG: defs };
+  return { edgesG, nodesG, captionG, marqueeG, defsG: defs };
+}
+
+/**
+ * Draw the diagram's caption, or remove it when `caption` is null. Styled
+ * with attributes, not page CSS, so it stays part of the SVG itself.
+ */
+export function renderCaption(
+  captionG: GroupSelection,
+  caption: string | null,
+  at: Point,
+  fontSize: number,
+): void {
+  captionG
+    .selectAll<SVGTextElement, string>('text')
+    .data(caption === null ? [] : [caption])
+    .join('text')
+    .attr('x', at.x)
+    .attr('y', at.y)
+    .attr('font-family', 'sans-serif')
+    .attr('font-size', fontSize)
+    .attr('fill', '#444')
+    .attr('pointer-events', 'none')
+    .text((d) => d);
 }
 
 /**

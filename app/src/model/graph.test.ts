@@ -33,6 +33,18 @@ describe('buildGraph - corpus', () => {
   }
 });
 
+describe('buildGraph - lcsmcn.dgm (the WEIGHT variable was drawn as a stray box)', () => {
+  it('draws the variables Mplus lists for the model, without the weight', () => {
+    const dgm = parseDgm(readFileSync(join(DGM_DIR, 'lcsmcn.dgm'), 'utf8'));
+    expect(dgm.useVar.map((v) => v.toLowerCase())).toContain('weight4');
+
+    const ids = buildGraph(dgm).nodes.map((n) => n.id);
+
+    expect(ids).not.toContain('weight4');
+    expect(ids.sort()).toEqual(dgm.header.allVariables.map((v) => v.toLowerCase()).sort());
+  });
+});
+
 // syn_sem.dgm / syn_twofactor.dgm: synthetic fixtures (invented models and
 // names, data simulated with Mplus MONTECARLO). See dgm/README.md.
 describe('buildGraph - syn_sem.dgm', () => {
