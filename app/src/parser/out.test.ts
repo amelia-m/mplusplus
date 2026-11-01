@@ -13,11 +13,6 @@ describe('parseOut', () => {
   const text = readFileSync(FIXTURE, 'utf8');
   const parsed = parseOut(text);
 
-  it('returns rows for both unstd and STDYX sections', () => {
-    expect(parsed.unstd.length).toBeGreaterThan(0);
-    expect(parsed.stdyx.length).toBeGreaterThan(0);
-  });
-
   it('parses BY rows into latent->indicator with p-values', () => {
     const a1 = parsed.unstd.find((r) => r.block === 'BY' && r.from === 'fa' && r.to === 'a1');
     expect(a1).toBeDefined();
@@ -47,17 +42,13 @@ describe('parseOut', () => {
     expect(res!.estimate).toBeCloseTo(0.489, 3);
   });
 
-  it('separates STDYX values from unstandardized', () => {
+  it('reads STDYX values from the real layout, where STDYX has its own header line', () => {
+    // Regression: the section header regex needed STDYX on the same line as
+    // STANDARDIZED MODEL RESULTS, so real Mplus output gave no STDYX rows.
     const a1 = parsed.stdyx.find((r) => r.block === 'BY' && r.from === 'fa' && r.to === 'a1');
     expect(a1?.estimate).toBeCloseTo(0.766, 3);
     const onRow = parsed.stdyx.find((r) => r.block === 'ON' && r.from === 'fc' && r.to === 'x1');
     expect(onRow?.estimate).toBeCloseTo(0.431, 3);
-  });
-
-  it('reads STDYX from the real layout, where it has its own header line', () => {
-    // Regression: the section header regex needed STDYX on the same line as
-    // STANDARDIZED MODEL RESULTS, so real Mplus output gave no STDYX rows.
-    expect(parsed.stdyx.some((r) => r.block === 'BY')).toBe(true);
   });
 
   it('does not fold STDY or STD rows into STDYX', () => {
@@ -101,16 +92,17 @@ describe('buildPValueMap', () => {
     expect(map['WITH:x1->x2']).toEqual(map['WITH:x2->x1']);
   });
 
-  it('omits variance-style rows from the p-value map', () => {
-    expect(map['BY:a1->a1']).toBeUndefined();
-    expect(Object.keys(map).some((k) => k.endsWith('->'))).toBe(false);
+  it('keys only the BY, ON and WITH rows, so variance rows get no entry', () => {
+    expect(Object.keys(map).sort()).toEqual([
+      'BY:fa->a1', 'BY:fa->a2', 'BY:fa->a3', 'BY:fb->b1', 'BY:fb->b2', 'BY:fb->b3', 'BY:fb->b4',
+      'BY:fc->c1', 'BY:fc->c2', 'BY:fc->c3', 'BY:fc->c4',
+      'COVAR:b4->c4', 'COVAR:c4->b4', 'COVAR:x1->x2', 'COVAR:x2->x1',
+      'ON:fa->fb', 'ON:fa->fc', 'ON:fb->fc', 'ON:fc->x1', 'ON:fc->x2', 'ON:z1->fa',
+      'WITH:b4->c4', 'WITH:c4->b4', 'WITH:x1->x2', 'WITH:x2->x1',
+    ]);
   });
-});
 
-describe('buildPValueMap - COVAR keys (X4)', () => {
-  const map = buildPValueMap(parseOut(readFileSync(FIXTURE, 'utf8')));
-
-  it('records WITH rows under COVAR keys in both orderings', () => {
+  it('records WITH rows under COVAR keys in both orderings (X4)', () => {
     expect(map['COVAR:x2->x1']).toEqual(map['WITH:x2->x1']);
     expect(map['COVAR:x1->x2']).toEqual(map['WITH:x2->x1']);
   });

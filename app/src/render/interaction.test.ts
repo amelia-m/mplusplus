@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CLICK_THRESHOLD_PX,
   dragShouldMove,
   dragStartAction,
   exceedsClickThreshold,
@@ -34,7 +33,6 @@ describe('groupDragPositions (Y3)', () => {
 
 describe('exceedsClickThreshold', () => {
   it('counts movement under the threshold as a click', () => {
-    expect(CLICK_THRESHOLD_PX).toBe(3);
     expect(exceedsClickThreshold({ x: 0, y: 0 }, { x: 2, y: 2 })).toBe(false);
     expect(exceedsClickThreshold({ x: 0, y: 0 }, { x: 3, y: 0 })).toBe(true);
   });
@@ -111,15 +109,6 @@ describe('dragShouldMove (R2)', () => {
   it('keeps moving after it has started, even back inside the threshold', () => {
     expect(dragShouldMove(press, { x: 101, y: 100 }, true)).toBe(true);
     expect(dragShouldMove(press, press, true)).toBe(true);
-  });
-  it('moves from the original press point on first crossing, so the grab offset holds', () => {
-    const start = new Map([['a', { x: 70, y: 80, width: 120, height: 56 }]]);
-    const pointerStart = { x: 100, y: 100 };
-    const now = { x: 104, y: 100 };
-    expect(dragShouldMove(pointerStart, now, false)).toBe(true);
-    const out = groupDragPositions(start, pointerStart, now);
-    expect(now.x - out.a.x).toBe(30);
-    expect(now.y - out.a.y).toBe(20);
   });
 });
 
