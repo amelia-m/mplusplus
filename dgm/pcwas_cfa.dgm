@@ -1,0 +1,94 @@
+VERSION 1.1.0
+INPUT
+TITLE:
+ Confirmatory Factor Analysis for the PCWAS (Each Culture Separately)
+
+DATA:
+    FILE IS pcwas.dat;
+VARIABLE:
+    NAMES ARE
+       ID culture gender manager PWAS1 PWAS2 PWAS3 PWAC1 PWAC2 PWAC3
+       IWAS1 IWAS2 IWAS3 IWAS4 IWAS5 jstress jsatisf;
+    USEV = PWAS1 PWAS2 PWAS3 PWAC1 PWAC2 PWAC3;
+    USEOBSERVATIONS ARE (culture eq 1);
+ANALYSIS:
+   ESTIMATOR IS MLMV;
+OUTPUT:
+ SAMPSTAT STDYX MODINDICES(0);
+MODEL:
+   PWAS by PWAS1 PWAS2 PWAS3;
+   PWAC by PWAC1 PWAC2 PWAC3;
+   PWAS3 with PWAC3;
+   PWAS1 with PWAC1;
+INPUT_END
+2
+2
+0
+2
+MLMV
+1
+GENERAL
+0
+6
+2
+0
+pwas1 pwas2 pwas3 pwac1 pwac2 pwac3 pwas pwac
+1
+-1 -1 -1 -1 -1 -1 0 0
+0
+2
+pwas
+pwas1 pwas2 pwas3
+pwac
+pwac1 pwac2 pwac3
+1 1 pwas pwas1 1.000 0.000
+1 1 pwas pwas2 1.712 0.107
+1 1 pwas pwas3 1.275 0.081
+1 1 pwac pwac1 1.000 0.000
+1 1 pwac pwac2 1.403 0.082
+1 1 pwac pwac3 1.098 0.069
+2 1 pwas3 pwac3 0.506 0.061
+2 1 pwas1 pwac1 0.452 0.064
+2 1 pwac pwas 0.454 0.047
+4 1 pwas1 2.481 0.112
+4 1 pwas2 0.878 0.129
+4 1 pwas3 2.060 0.119
+4 1 pwac1 1.036 0.071
+4 1 pwac2 0.476 0.060
+4 1 pwac3 1.327 0.074
+5 1 pwas 0.971 0.108
+5 1 pwac 0.678 0.066
+11 1 pwas pwas1 0.530 0.027
+11 1 pwas pwas2 0.874 0.020
+11 1 pwas pwas3 0.659 0.023
+11 1 pwac pwac1 0.629 0.029
+11 1 pwac pwac2 0.859 0.019
+11 1 pwac pwac3 0.617 0.025
+12 1 pwas3 pwac3 0.306 0.032
+12 1 pwas1 pwac1 0.282 0.033
+12 1 pwac pwas 0.559 0.027
+14 1 pwas1 0.719 0.029
+14 1 pwas2 0.236 0.035
+14 1 pwas3 0.566 0.031
+14 1 pwac1 0.605 0.036
+14 1 pwac2 0.263 0.033
+14 1 pwac3 0.619 0.030
+15 1 pwas 1.000 0.0000000001000
+15 1 pwac 1.000 0.0000000001000
+31 1 pwas pwas1 0.985 0.055
+31 1 pwas pwas2 1.687 0.045
+31 1 pwas pwas3 1.257 0.049
+31 1 pwac pwac1 0.823 0.040
+31 1 pwac pwac2 1.155 0.036
+31 1 pwac pwac3 0.904 0.041
+32 1 pwas3 pwac3 0.506 0.061
+32 1 pwas1 pwac1 0.452 0.064
+32 1 pwac pwas 0.559 0.027
+34 1 pwas1 2.481 0.112
+34 1 pwas2 0.878 0.129
+34 1 pwas3 2.060 0.119
+34 1 pwac1 1.036 0.071
+34 1 pwac2 0.476 0.060
+34 1 pwac3 1.327 0.074
+35 1 pwas 1.000 0.0000000001000
+35 1 pwac 1.000 0.0000000001000
