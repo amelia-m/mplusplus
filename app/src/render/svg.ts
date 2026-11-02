@@ -24,6 +24,7 @@ import {
 } from './styles.js';
 import { isSignificant, type SignificanceSource } from '../model/significance.js';
 import { boundaryPoint } from './geometry.js';
+import type { CaptionPlacement } from '../ui/viewBox.js';
 
 const NODE_W = 120;
 const NODE_H = 56;
@@ -54,6 +55,7 @@ export type GroupSelection = Selection<SVGGElement, unknown, null, undefined>;
 export function setupSvg(svg: SVGSVGElement): {
   edgesG: GroupSelection;
   nodesG: GroupSelection;
+  captionG: GroupSelection;
   marqueeG: GroupSelection;
   defsG: Selection<SVGDefsElement, unknown, null, undefined>;
 } {
@@ -65,9 +67,34 @@ export function setupSvg(svg: SVGSVGElement): {
   // Order matters: edges below nodes; marquee on top of everything.
   const edgesG = root.append('g').attr('class', 'edges') as GroupSelection;
   const nodesG = root.append('g').attr('class', 'nodes') as GroupSelection;
+  const captionG = root.append('g').attr('class', 'caption') as GroupSelection;
   const marqueeG = root.append('g').attr('class', 'marquee') as GroupSelection;
 
-  return { edgesG, nodesG, marqueeG, defsG: defs };
+  return { edgesG, nodesG, captionG, marqueeG, defsG: defs };
+}
+
+/**
+ * Draw the diagram's caption lines and return the widest one's length, 0
+ * with none. Styled with attributes, not page CSS, so it stays part of the
+ * SVG itself.
+ */
+export function renderCaption(
+  captionG: GroupSelection,
+  lines: string[],
+  place: Pick<CaptionPlacement, 'at' | 'fontSize' | 'lineHeight'>,
+): number {
+  const text = captionG
+    .selectAll<SVGTextElement, string>('text')
+    .data(lines)
+    .join('text')
+    .attr('x', place.at.x)
+    .attr('y', (_, i) => place.at.y + i * place.lineHeight)
+    .attr('font-family', 'sans-serif')
+    .attr('font-size', place.fontSize)
+    .attr('fill', '#444')
+    .attr('pointer-events', 'none')
+    .text((d) => d);
+  return Math.max(0, ...text.nodes().map((n) => n.getComputedTextLength()));
 }
 
 /**
