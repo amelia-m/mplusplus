@@ -237,8 +237,7 @@ function fitViewBox(): void {
   const captions = s.graph ? modelCaptions(s.graph.source) : [];
   const placed = placeCaption(content, captions.length);
   const textWidth = renderCaption(captionG, captions, placed);
-  const viewBox = textWidth > 0 ? widenToFit(placed.viewBox, placed.at.x, textWidth) : placed.viewBox;
-  svg.setAttribute('viewBox', formatViewBox(viewBox));
+  svg.setAttribute('viewBox', formatViewBox(widenToFit(placed.viewBox, placed.at.x, textWidth)));
 }
 
 function mergeLayout(

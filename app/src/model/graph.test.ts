@@ -37,6 +37,7 @@ describe('buildGraph - lcsmcn.dgm (the WEIGHT variable was drawn as a stray box)
   it('draws the variables Mplus lists for the model, without the weight', () => {
     const dgm = parseDgm(readFileSync(join(DGM_DIR, 'lcsmcn.dgm'), 'utf8'));
     expect(dgm.useVar.map((v) => v.toLowerCase())).toContain('weight4');
+    expect(dgm.weights).toEqual([{ option: 'WEIGHT', variables: 'weight4' }]);
 
     const ids = buildGraph(dgm).nodes.map((n) => n.id);
 
