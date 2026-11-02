@@ -71,11 +71,26 @@ export interface DgmHeader {
   groupings: { latent: string; observed: string[] }[];
 }
 
+export interface WeightOption {
+  option: string;
+  /** As written, ranges included: `w`, `r1-r80`. */
+  variables: string;
+}
+
+/**
+ * The weight options a `.dgm` can show. Mplus 8.11 accepts these with a
+ * diagram (probe 2026-11-01). BWEIGHT, B2WEIGHT and B3WEIGHT are multilevel,
+ * and it writes no diagram for a multilevel analysis.
+ */
+const WEIGHT_OPTIONS = ['WEIGHT', 'FREQWEIGHT', 'REPWEIGHTS'];
+
 export interface DgmFile {
   /** Verbatim text from start of file through (and including) `INPUT_END`. */
   inputBlock: string;
   variables: string[];
   useVar: string[];
+  /** Weight options of the VARIABLE command; empty for an unweighted analysis. */
+  weights: WeightOption[];
   modelStatements: ModelStmt[];
   header: DgmHeader;
   estimates: EstimateRow[];
@@ -127,6 +142,11 @@ export function parseDgm(text: string): DgmFile {
     parseNamesList(variableCommand, optionRe('USEVARIABLES')),
     variables,
   );
+  const weights = WEIGHT_OPTIONS.flatMap((option) => {
+    // A qualifier may follow the name, with or without a space: `w (SAMPLING)`.
+    const names = parseNamesList(variableCommand, optionRe(option)).join(' ').split('(')[0].trim();
+    return names ? [{ option, variables: names }] : [];
+  });
   // List order for observed variables in MODEL ranges: USEVARIABLES, or
   // NAMES when there is no USEVARIABLES (see `rangeByPosition`).
   const modelStatements = parseModelBlock(cleanedInput, useVar.length > 0 ? useVar : variables);
@@ -140,6 +160,7 @@ export function parseDgm(text: string): DgmFile {
     inputBlock,
     variables,
     useVar,
+    weights,
     modelStatements,
     header,
     estimates,

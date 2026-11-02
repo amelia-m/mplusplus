@@ -11,6 +11,7 @@ import { elkEngine } from './layout/elk.js';
 import { registerLayoutEngine, getLayoutEngine } from './layout/index.js';
 import {
   setupSvg,
+  renderCaption,
   renderGraph,
   NODE_DIMENSIONS,
   type RenderState,
@@ -25,7 +26,8 @@ import { classifyHistoryKey } from './ui/historyKeys.js';
 import { countMatchedPValues } from './ui/pValueMatch.js';
 import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
-import { contentViewBox, formatViewBox } from './ui/viewBox.js';
+import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
+import { modelCaptions } from './model/caption.js';
 import { useStore } from './state/store.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
@@ -65,7 +67,7 @@ const globalHost = document.querySelector<HTMLDivElement>('#global-panel')!;
 const inspectorHost = document.querySelector<HTMLElement>('#inspector')!;
 const toastHost = document.querySelector<HTMLDivElement>('#toast')!;
 
-const { edgesG, nodesG, marqueeG, defsG } = setupSvg(svg);
+const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
 
 mountToolbar(toolbarHost, {
@@ -231,7 +233,11 @@ function fitViewBox(): void {
   const merged = s.layout ? mergeLayout(s.layout, s.positions) : null;
   const boxes = merged?.nodes ?? [];
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
-  svg.setAttribute('viewBox', formatViewBox(contentViewBox(boxes, { points })));
+  const content = contentViewBox(boxes, { points });
+  const captions = s.graph ? modelCaptions(s.graph.source) : [];
+  const placed = placeCaption(content, captions.length);
+  const textWidth = renderCaption(captionG, captions, placed);
+  svg.setAttribute('viewBox', formatViewBox(widenToFit(placed.viewBox, placed.at.x, textWidth)));
 }
 
 function mergeLayout(
