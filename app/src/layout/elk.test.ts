@@ -50,10 +50,21 @@ describe('elkEngine', () => {
       }
     }
     // ELK 'layered' is expected to be near-zero. We approximate with
-    // straight-line center-to-center segments here; the real renderer uses
-    // ELK bend points so the visual crossing count is at most this number
-    // and typically zero for this graph.
+    // straight-line center-to-center segments here, which is what the
+    // renderer draws for paths; covariances may follow ELK bend points.
     expect(crossings).toBeLessThanOrEqual(3);
+  });
+
+  it('keeps paths straight (ELK bends drew them as right angles) and covariances routed', async () => {
+    const twoLayerSpan = buildGraph(parseDgm(readFileSync(FIXTURE, 'utf8')));
+    const { edges } = await elkEngine.layout(twoLayerSpan, { width: 1200, height: 800 });
+    const bends = new Map(edges.map((e) => [e.id, e.bend ?? []]));
+    const paths = twoLayerSpan.edges.filter((e) => e.kind === 'BY' || e.kind === 'ON');
+    const covariances = twoLayerSpan.edges.filter((e) => e.kind === 'WITH' || e.kind === 'COVAR');
+
+    expect(paths.length).toBeGreaterThan(0);
+    for (const e of paths) expect(bends.get(e.id), e.id).toEqual([]);
+    expect(covariances.some((e) => (bends.get(e.id) ?? []).length > 0)).toBe(true);
   });
 });
 
