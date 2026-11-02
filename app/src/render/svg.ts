@@ -24,6 +24,7 @@ import {
 } from './styles.js';
 import { isSignificant, type SignificanceSource } from '../model/significance.js';
 import { boundaryPoint } from './geometry.js';
+import type { CaptionPlacement } from '../ui/viewBox.js';
 
 const NODE_W = 120;
 const NODE_H = 56;
@@ -73,26 +74,27 @@ export function setupSvg(svg: SVGSVGElement): {
 }
 
 /**
- * Draw the diagram's caption, or remove it when `caption` is null. Styled
- * with attributes, not page CSS, so it stays part of the SVG itself.
+ * Draw the diagram's caption lines and return the widest one's length, 0
+ * with none. Styled with attributes, not page CSS, so it stays part of the
+ * SVG itself.
  */
 export function renderCaption(
   captionG: GroupSelection,
-  caption: string | null,
-  at: Point,
-  fontSize: number,
-): void {
-  captionG
+  lines: string[],
+  place: Pick<CaptionPlacement, 'at' | 'fontSize' | 'lineHeight'>,
+): number {
+  const text = captionG
     .selectAll<SVGTextElement, string>('text')
-    .data(caption === null ? [] : [caption])
+    .data(lines)
     .join('text')
-    .attr('x', at.x)
-    .attr('y', at.y)
+    .attr('x', place.at.x)
+    .attr('y', (_, i) => place.at.y + i * place.lineHeight)
     .attr('font-family', 'sans-serif')
-    .attr('font-size', fontSize)
+    .attr('font-size', place.fontSize)
     .attr('fill', '#444')
     .attr('pointer-events', 'none')
     .text((d) => d);
+  return Math.max(0, ...text.nodes().map((n) => n.getComputedTextLength()));
 }
 
 /**

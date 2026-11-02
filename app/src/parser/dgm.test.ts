@@ -280,25 +280,35 @@ describe('parseDgm - keywords shortened to four or more letters', () => {
   });
 });
 
-describe('parseDgm - the WEIGHT option', () => {
+describe('parseDgm - weight options', () => {
+  const weight = (variables: string) => [{ option: 'WEIGHT', variables }];
+
   it('reads the weight variable, whichever form the option takes', () => {
-    expect(parseY('WEIGHT IS w;').weight).toBe('w');
-    expect(parseY('WEIG = w;').weight).toBe('w');
-    expect(parseY('WEIGHT = w (SAMPLING);').weight).toBe('w');
-    expect(parseY('WEIGHT = w(SAMPLING);').weight).toBe('w');
+    expect(parseY('WEIGHT IS w;').weights).toEqual(weight('w'));
+    expect(parseY('WEIG = w;').weights).toEqual(weight('w'));
+    expect(parseY('WEIGHT = w (SAMPLING);').weights).toEqual(weight('w'));
+    expect(parseY('WEIGHT = w(SAMPLING);').weights).toEqual(weight('w'));
   });
 
-  it('gives null for an unweighted analysis', () => {
-    expect(parseY('').weight).toBeNull();
+  it('reads each option in use, a range as written', () => {
+    expect(parseY('WEIGHT = w;\nREPWEIGHTS = r1-r4;\nFREQWEIGHT = f;').weights).toEqual([
+      { option: 'WEIGHT', variables: 'w' },
+      { option: 'FREQWEIGHT', variables: 'f' },
+      { option: 'REPWEIGHTS', variables: 'r1-r4' },
+    ]);
+  });
+
+  it('finds none in an unweighted analysis', () => {
+    expect(parseY('').weights).toEqual([]);
   });
 
   it('is not misled by a variable named weight in NAMES', () => {
     const dgm = parseDgm(synthDgm('VARIABLE: NAMES = weight y1 y2 y3;\nUSEVARIABLES = y1 y2 y3;'));
-    expect(dgm.weight).toBeNull();
+    expect(dgm.weights).toEqual([]);
   });
 
   it('does not take BWEIGHT for WEIGHT', () => {
-    expect(parseY('BWEIGHT = b;').weight).toBeNull();
+    expect(parseY('BWEIGHT = b;').weights).toEqual([]);
   });
 });
 

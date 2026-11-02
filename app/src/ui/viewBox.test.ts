@@ -4,25 +4,44 @@ import {
   contentViewBox,
   formatViewBox,
   placeCaption,
+  widenToFit,
 } from './viewBox.js';
 
 const box = (x: number, y: number, width = 120, height = 56) => ({ x, y, width, height });
 
 describe('placeCaption', () => {
-  it('adds room so the text sits below the old view and inside the new one', () => {
+  it('adds room so every line sits below the old view and inside the new one', () => {
     const vb = { x: -40, y: -40, width: 500, height: 300 };
 
-    const { viewBox, at, fontSize } = placeCaption(vb);
+    const { viewBox, at, fontSize, lineHeight } = placeCaption(vb, 2);
+    const lastBaseline = at.y + lineHeight;
 
     expect(at.x).toBe(0);
     expect(at.y).toBeGreaterThan(vb.y + vb.height);
-    expect(at.y + 0.25 * fontSize).toBeLessThan(viewBox.y + viewBox.height);
+    expect(lastBaseline + 0.25 * fontSize).toBeLessThan(viewBox.y + viewBox.height);
     expect({ ...viewBox, height: vb.height }).toEqual(vb);
   });
 
+  it('leaves the view alone with nothing to draw', () => {
+    const vb = { x: 0, y: 0, width: 500, height: 300 };
+    expect(placeCaption(vb, 0).viewBox).toEqual(vb);
+  });
+
   it('scales with a wide view, so it stays readable once the canvas shrinks it', () => {
-    expect(placeCaption({ x: 0, y: 0, width: 3500, height: 700 }).fontSize).toBe(50);
-    expect(placeCaption({ x: 0, y: 0, width: 300, height: 200 }).fontSize).toBe(14);
+    expect(placeCaption({ x: 0, y: 0, width: 3500, height: 700 }, 1).fontSize).toBe(50);
+    expect(placeCaption({ x: 0, y: 0, width: 300, height: 200 }, 1).fontSize).toBe(14);
+  });
+});
+
+describe('widenToFit', () => {
+  const vb = { x: -40, y: 0, width: 200, height: 100 };
+
+  it('widens the view for text that would clip, keeping the padding', () => {
+    expect(widenToFit(vb, 0, 300).width).toBe(380);
+  });
+
+  it('leaves a view wide enough for the text', () => {
+    expect(widenToFit(vb, 0, 50)).toEqual(vb);
   });
 });
 

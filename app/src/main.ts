@@ -26,8 +26,8 @@ import { classifyHistoryKey } from './ui/historyKeys.js';
 import { countMatchedPValues } from './ui/pValueMatch.js';
 import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
-import { contentViewBox, formatViewBox, placeCaption } from './ui/viewBox.js';
-import { modelCaption } from './model/caption.js';
+import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
+import { modelCaptions } from './model/caption.js';
 import { useStore } from './state/store.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
@@ -234,10 +234,11 @@ function fitViewBox(): void {
   const boxes = merged?.nodes ?? [];
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
   const content = contentViewBox(boxes, { points });
-  const caption = s.graph ? modelCaption(s.graph.source) : null;
-  const placed = placeCaption(content);
-  svg.setAttribute('viewBox', formatViewBox(caption === null ? content : placed.viewBox));
-  renderCaption(captionG, caption, placed.at, placed.fontSize);
+  const captions = s.graph ? modelCaptions(s.graph.source) : [];
+  const placed = placeCaption(content, captions.length);
+  const textWidth = renderCaption(captionG, captions, placed);
+  const viewBox = textWidth > 0 ? widenToFit(placed.viewBox, placed.at.x, textWidth) : placed.viewBox;
+  svg.setAttribute('viewBox', formatViewBox(viewBox));
 }
 
 function mergeLayout(

@@ -78,11 +78,13 @@ export function contentViewBox(boxes: Iterable<Box>, options: ContentViewBoxOpti
 }
 
 export interface CaptionPlacement {
-  /** `vb` with room added underneath for the caption. */
+  /** `vb` with room added underneath for the caption's lines. */
   viewBox: ViewBox;
-  /** Start of the caption's baseline. */
+  /** Start of the first line's baseline. */
   at: Point;
   fontSize: number;
+  /** Distance between baselines. */
+  lineHeight: number;
 }
 
 /** Smallest caption, and the view width it shrinks to per unit of font size. */
@@ -90,17 +92,25 @@ const CAPTION_MIN_FONT = 14;
 const CAPTION_WIDTHS_PER_FONT = 70;
 
 /**
- * Place a caption under the content. The canvas scales the view to fit, so
- * a fixed font size would be unreadable on a wide diagram: the size follows
- * the view's width.
+ * Place `lines` lines of caption under the content. The canvas scales the
+ * view to fit, so a fixed font size would be unreadable on a wide diagram:
+ * the size follows the view's width.
  */
-export function placeCaption(vb: ViewBox): CaptionPlacement {
+export function placeCaption(vb: ViewBox, lines: number): CaptionPlacement {
   const fontSize = Math.max(CAPTION_MIN_FONT, vb.width / CAPTION_WIDTHS_PER_FONT);
+  const lineHeight = 1.2 * fontSize;
   return {
-    viewBox: { ...vb, height: vb.height + 1.2 * fontSize },
+    viewBox: { ...vb, height: vb.height + lines * lineHeight },
     at: { x: vb.x + VIEWBOX_PADDING, y: vb.y + vb.height + 0.9 * fontSize },
     fontSize,
+    lineHeight,
   };
+}
+
+/** `vb` widened if needed so text from `textX`, `textWidth` long, keeps the padding. */
+export function widenToFit(vb: ViewBox, textX: number, textWidth: number): ViewBox {
+  const right = textX + textWidth + VIEWBOX_PADDING;
+  return { ...vb, width: Math.max(vb.width, right - vb.x) };
 }
 
 export function formatViewBox(vb: ViewBox): string {
