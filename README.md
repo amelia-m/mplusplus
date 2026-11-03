@@ -67,4 +67,4 @@ The fixtures in `dgm/` have their own terms, given in [dgm/README.md](dgm/README
 
 ## AI assistance
 
-Designed by Amelia Miramonti and implemented with Claude Code (Anthropic).
+Implemented with Claude Code (Anthropic).
