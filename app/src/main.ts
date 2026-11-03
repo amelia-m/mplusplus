@@ -31,7 +31,16 @@ import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions } from './model/caption.js';
-import { useStore } from './state/store.js';
+import { historySlice, useStore } from './state/store.js';
+import {
+  clearSession,
+  loadSession,
+  restoreSession,
+  saveSession,
+  toSession,
+  type SavedSession,
+  type SessionStorage,
+} from './state/autosave.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
@@ -41,8 +50,27 @@ import type { Selection } from 'd3-selection';
 registerLayoutEngine(semEngine);
 registerLayoutEngine(elkEngine);
 
+/**
+ * The browser's storage for autosave, or null where it is unavailable
+ * (disabled, or blocked for a page opened from `file://`).
+ */
+const storage: SessionStorage | null = (() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+/** The last autosaved diagram, read before the toolbar mounts so its engine is the one shown. */
+const saved = storage ? loadSession(storage) : null;
+
 /** Engine for the next layout; the toolbar's picker changes it. */
-let engineName = DEFAULT_LAYOUT_ENGINE;
+let engineName =
+  saved && getLayoutEngine(saved.engine) ? saved.engine : DEFAULT_LAYOUT_ENGINE;
+/** The loaded `.dgm`, kept so autosave can store its text. */
+let current: { fileName: string; dgmText: string } | null = null;
+/** Set by Discard, so no save lands between clearing the slot and the reload. */
+let discarding = false;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -58,6 +86,11 @@ app.innerHTML = `
     <input type="file" id="filepicker" accept=".dgm,.out" />
   </div>
   <div id="toast"></div>
+  <div id="notice" class="notice" hidden>
+    <span id="notice-text"></span>
+    <button type="button" id="notice-discard" class="btn">Discard</button>
+    <button type="button" id="notice-close" class="btn" title="Hide this notice">Hide</button>
+  </div>
   <main class="main-area">
     <div class="canvas-wrap">
       <svg id="canvas" width="1200" height="800"></svg>
@@ -73,6 +106,7 @@ const toolbarHost = document.querySelector<HTMLDivElement>('#toolbar')!;
 const globalHost = document.querySelector<HTMLDivElement>('#global-panel')!;
 const inspectorHost = document.querySelector<HTMLElement>('#inspector')!;
 const toastHost = document.querySelector<HTMLDivElement>('#toast')!;
+const notice = document.querySelector<HTMLDivElement>('#notice')!;
 
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
@@ -157,12 +191,61 @@ window.addEventListener('keydown', (e) => {
 // refit once it ends.
 onGestureEnd(() => fitViewBox());
 
+// Autosave: every store change schedules a save of the open diagram, so a
+// burst of changes (a drag) writes once.
+const AUTOSAVE_DELAY_MS = 400;
+let saveTimer: number | undefined;
+useStore.subscribe(() => {
+  if (!storage) return;
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    const s = useStore.getState();
+    if (discarding || !current || !s.graph || !s.layout) return;
+    const session = toSession(current.fileName, current.dgmText, engineName, s.layout, historySlice(s), new Date());
+    if (!saveSession(storage, session)) console.warn('Autosave failed: browser storage refused the diagram.');
+  }, AUTOSAVE_DELAY_MS);
+});
+
+document.querySelector('#notice-close')!.addEventListener('click', () => (notice.hidden = true));
+document.querySelector('#notice-discard')!.addEventListener('click', () => {
+  // Undo cannot bring a discarded diagram back; the reload starts empty.
+  discarding = true;
+  if (storage) clearSession(storage);
+  window.location.reload();
+});
+
+if (saved) restore(saved);
+
+/** Bring back the autosaved diagram, as it was, with a notice offering Discard. */
+function restore(session: SavedSession): void {
+  try {
+    const { graph, layout, slice } = restoreSession(session);
+    cancelNodeDrag();
+    endActiveGesture();
+    useStore.getState().loadGraph(graph, layout);
+    useStore.setState(slice);
+    const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
+    t.getState().clear();
+    current = { fileName: session.fileName, dgmText: session.dgmText };
+    redraw();
+    dropzone.classList.add('hidden');
+    const when = new Date(session.savedAt).toLocaleString();
+    document.querySelector('#notice-text')!.textContent = `Restored ${session.fileName} (saved ${when}).`;
+    notice.hidden = false;
+  } catch (err) {
+    console.warn('Autosaved diagram could not be restored; discarding it.', err);
+    if (storage) clearSession(storage);
+  }
+}
+
 async function handleFile(file: File): Promise<void> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
-      const { graph } = await loadDgmFile(file);
+      const { graph, text } = await loadDgmFile(file);
       await runLayout(graph);
+      current = { fileName: file.name, dgmText: text };
+      notice.hidden = true;
       redraw();
       dropzone.classList.add('hidden');
       toast(`Loaded ${file.name}`);

@@ -176,6 +176,21 @@ html, body {
   background: #b91c1c;
 }
 
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px;
+  padding: 6px 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1e3a8a;
+}
+
+.notice[hidden] { display: none; }
+
 .main-area {
   flex: 1;
   min-height: 0;
