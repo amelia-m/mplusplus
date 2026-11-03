@@ -69,8 +69,10 @@ export interface LayoutEngine {
 export const DEFAULT_LAYOUT_ENGINE = 'sem';
 
 /**
- * Registry of available layout engines: `sem` (`sem.ts`) and the ELK
- * adapter (`elk-layered`, `elk.ts`), both registered by `main.ts`.
+ * Registry of available layout engines. Only `sem` (`sem.ts`) ships,
+ * registered by `main.ts`; an ELK adapter was dropped on 2026-11-03 (its
+ * bundled elkjs 0.9.3 was EPL-2.0 only, and no model needed it). A new
+ * engine registers here.
  */
 const registry = new Map<string, LayoutEngine>();
 

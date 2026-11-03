@@ -126,7 +126,7 @@ describe('autosave', () => {
     const base = { file, engine: 'sem', layout, slice };
     expect(sameSaveState(base, { ...base, slice: { ...slice } })).toBe(true);
     expect(sameSaveState(base, { ...base, file: { ...file } })).toBe(false); // the same file loaded again
-    expect(sameSaveState(base, { ...base, engine: 'elk-layered' })).toBe(false);
+    expect(sameSaveState(base, { ...base, engine: 'another-engine' })).toBe(false);
     expect(sameSaveState(base, { ...base, layout: { ...layout } })).toBe(false);
     expect(sameSaveState(base, { ...base, slice: { ...slice, positions: {} } })).toBe(false);
   });

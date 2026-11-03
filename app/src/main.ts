@@ -7,7 +7,6 @@
  * resets the undo history; a `.out` attaches p-values to the loaded graph.
  */
 import { loadDgmFile, loadOutFile, classifyFile } from './io/load.js';
-import { elkEngine } from './layout/elk.js';
 import { semEngine } from './layout/sem.js';
 import { registerLayoutEngine, getLayoutEngine, DEFAULT_LAYOUT_ENGINE } from './layout/index.js';
 import {
@@ -52,7 +51,6 @@ import type { LayoutResult, NodeLayout } from './layout/index.js';
 import type { Selection } from 'd3-selection';
 
 registerLayoutEngine(semEngine);
-registerLayoutEngine(elkEngine);
 
 /**
  * The browser's storage for autosave, or null where it is unavailable
@@ -65,16 +63,14 @@ const storage: SessionStorage | null = (() => {
     return null;
   }
 })();
-/** The last autosaved diagram, read before the toolbar mounts so its engine is the one shown. */
+/** The last autosaved diagram. */
 const saved = storage ? loadSession(storage) : null;
 
 /**
- * Engine for the next layout; the toolbar's picker changes it. It starts
- * as the autosaved diagram's engine, a remembered preference, even in a tab
- * that does not restore that diagram.
+ * Engine for every layout. Only `sem` ships (Amelia, 2026-11-03: ELK
+ * dropped); a saved session's engine is recorded but not used to choose.
  */
-let engineName =
-  saved && getLayoutEngine(saved.engine) ? saved.engine : DEFAULT_LAYOUT_ENGINE;
+const engineName = DEFAULT_LAYOUT_ENGINE;
 /** The loaded `.dgm`, kept so autosave can store its text. */
 let current: { fileName: string; dgmText: string } | null = null;
 /** Set by Discard, so no save lands between clearing the slot and the reload. */
@@ -129,37 +125,19 @@ const notice = document.querySelector<HTMLDivElement>('#notice')!;
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
 
-/**
- * Lay the loaded model out again, with engine `name` when given. The engine
- * becomes the current one (the one the next autosave records) only once its
- * layout succeeds.
- */
-function relayout(name = engineName): void {
+/** Lay the loaded model out again (Re-run layout). */
+function relayout(): void {
   const graph = useStore.getState().graph;
   if (!graph) return;
-  runLayout(graph, name)
-    .then(() => {
-      engineName = name;
-      redraw();
-    })
+  runLayout(graph)
+    .then(redraw)
     .catch((err: unknown) => {
       console.error(err);
       toast(`Layout failed: ${err instanceof Error ? err.message : String(err)}`, true);
     });
 }
 
-mountToolbar(toolbarHost, {
-  onRedraw: redraw,
-  onRelayout: relayout,
-  engines: [
-    { name: semEngine.name, label: 'SEM' },
-    { name: elkEngine.name, label: 'ELK' },
-  ],
-  engine: engineName,
-  // Switching engines lays the model out again, so like Re-run layout it
-  // drops styles and undo history (open item in TODO.md).
-  onEngineChange: (name) => relayout(name),
-});
+mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout });
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);
@@ -428,13 +406,13 @@ function toast(msg: string, error = false): void {
   }, 3000);
 }
 
-async function runLayout(graph: ModelGraph, name = engineName): Promise<void> {
-  installGraph(graph, await computeLayout(graph, name));
+async function runLayout(graph: ModelGraph): Promise<void> {
+  installGraph(graph, await computeLayout(graph));
 }
 
-function computeLayout(graph: ModelGraph, name = engineName): Promise<LayoutResult> {
-  const engine = getLayoutEngine(name);
-  if (!engine) return Promise.reject(new Error(`Layout engine missing: ${name}`));
+function computeLayout(graph: ModelGraph): Promise<LayoutResult> {
+  const engine = getLayoutEngine(engineName);
+  if (!engine) return Promise.reject(new Error(`Layout engine missing: ${engineName}`));
   return engine.layout(graph, {
     width: 1200,
     height: 800,
