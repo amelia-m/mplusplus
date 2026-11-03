@@ -22,8 +22,8 @@ const edge = (over: Partial<GraphEdge>): GraphEdge => ({
 
 const graph = {
   nodes: [
-    { id: 'f', label: 'F', kind: 'latent' },
-    { id: 'x', label: 'X', kind: 'observed' },
+    { id: 'f', label: 'F', kind: 'latent', level: null, residual: null },
+    { id: 'x', label: 'X', kind: 'observed', level: null, residual: null },
   ],
   edges: [
     edge({}),

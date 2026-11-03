@@ -108,6 +108,25 @@ describe('buildGraph - syn_path.dgm (no latents: every path lost its estimate)',
     }
     expect(graph.nodes.every((n) => n.kind === 'observed')).toBe(true);
   });
+
+  it('gives each node its Mplus level and residual variance', () => {
+    const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8')));
+    const m1 = graph.nodes.find((n) => n.id === 'm1')!;
+    expect(m1.level).toBe(1);
+    expect(m1.residual?.unstd?.value).toBeCloseTo(0.593, 3);
+    expect(m1.residual?.stdyx?.value).toBeCloseTo(0.691, 3);
+    expect(graph.nodes.find((n) => n.id === 'k1')!.residual).toBeNull();
+  });
+
+  it('takes a 999.000 residual row as no estimate, as Mplus prints it for a parameter it does not estimate', () => {
+    const text = readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8').replace(
+      /^4 1 m1 0\.593 0\.042$/m,
+      '4 1 m1 999.000 999.000',
+    );
+    const m1 = buildGraph(parseDgm(text)).nodes.find((n) => n.id === 'm1')!;
+    expect(m1.residual?.unstd ?? null).toBeNull();
+    expect(m1.residual?.stdyx?.value).toBeCloseTo(0.691, 3);
+  });
 });
 
 describe('buildGraph - syn_range.dgm (list ranges became one node named y1-y3)', () => {

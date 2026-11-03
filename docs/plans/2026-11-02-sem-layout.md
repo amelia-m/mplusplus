@@ -159,8 +159,9 @@ Placement: each latent and its fan form a block. Bottom or top fan: indicators i
 
 ## Baseline
 
-To fill in at Task 3 Step 4.
+- Before Task 1 (after merging `main`, a6074ce): 282 tests pass, build clean.
+- Paths behind boxes: to fill in at Task 3 Step 4.
 
 ## Rulings
 
-None yet.
+- Task 1: the planned 999 edge test passed before any change, because no covariance value is stored (only codes 1 and 11 attach). Replaced by a test that a 999 residual row gives no estimate. TODO entry rewritten. Residual rows are not filtered by group, like edge rows; multi-group stays an open decision.
