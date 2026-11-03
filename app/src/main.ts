@@ -20,7 +20,7 @@ import {
   type GroupSelection,
 } from './render/svg.js';
 import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
-import { overlayGeometry, overlayPoints } from './render/residual.js';
+import { overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
 import { wireSelection } from './render/selection.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
@@ -155,7 +155,7 @@ window.addEventListener('keydown', (e) => {
 
 // The viewBox is frozen while a gesture is active (see `fitViewBox`), so
 // refit once it ends.
-onGestureEnd(fitViewBox);
+onGestureEnd(() => fitViewBox());
 
 async function handleFile(file: File): Promise<void> {
   const kind = classifyFile(file);
@@ -236,9 +236,9 @@ function redraw(): void {
     nodeSelection: s.selection,
     edgeSelection: s.edgeSelection,
   };
-  renderGraph(edgesG, nodesG, defsG as Selection<SVGDefsElement, unknown, null, undefined>, state);
+  const overlay = renderGraph(edgesG, nodesG, defsG as Selection<SVGDefsElement, unknown, null, undefined>, state);
   wireNodeDrag(nodesG as GroupSelection, redraw);
-  fitViewBox();
+  fitViewBox(overlay);
 }
 
 /**
@@ -246,8 +246,10 @@ function redraw(): void {
  * plus padding. It is left alone while a gesture is active: changing the
  * viewBox mid-drag would change the pointer-to-diagram mapping under the
  * pointer, so the dragged node would drift from the grab point. `onGestureEnd` refits afterwards.
+ * `overlay` is the residual and curve geometry just drawn, when the caller
+ * has it; otherwise it is worked out here.
  */
-function fitViewBox(): void {
+function fitViewBox(overlay?: OverlayGeometry): void {
   if (isGestureActive()) return;
   const s = useStore.getState();
   const merged = s.layout ? mergeLayout(s.layout, s.positions) : null;
@@ -255,7 +257,7 @@ function fitViewBox(): void {
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
   if (merged && s.graph) {
     const shapeOf = nodeShapeLookup(s.graph, s.nodeStyles);
-    points.push(...overlayPoints(overlayGeometry(merged, s.graph.edges, shapeOf)));
+    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf)));
   }
   const content = contentViewBox(boxes, { points });
   const captions = s.graph ? modelCaptions(s.graph.source) : [];

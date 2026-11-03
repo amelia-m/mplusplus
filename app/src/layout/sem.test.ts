@@ -98,6 +98,20 @@ describe('placeSem - paths and curves', () => {
     expect(edges.get(pair('k1', 'k2').id)!.curve).toEqual({ side: 'left', attach: 'node' });
   });
 
+  for (const name of fixtures) {
+    it(`joins every covariance of two dependent variables in ${name} at their residuals, whichever way they face`, () => {
+      const g = load(name);
+      const dependent = new Set(g.edges.filter((e) => e.kind === 'BY' || e.kind === 'ON').map((e) => e.to));
+      const withResidual = new Set(g.nodes.filter((n) => n.residual !== null).map((n) => n.id));
+      const layout = new Map(placeSem(g, W, H).edges.map((e) => [e.id, e]));
+      for (const e of g.edges) {
+        if (e.kind !== 'WITH' && e.kind !== 'COVAR') continue;
+        const both = [e.from, e.to].every((id) => dependent.has(id) && withResidual.has(id));
+        expect(layout.get(e.id)!.curve?.attach, e.id).toBe(both ? 'residual' : 'node');
+      }
+    });
+  }
+
   it('bends a factor covariance away from a left fan (as in ex5.11, where indicators take the left)', () => {
     const g = load('ms_fig2.dgm');
     const covar = g.edges.find((e) => (e.kind === 'WITH' || e.kind === 'COVAR') && [e.from, e.to].sort().join() === 'civ_1,eth_1');

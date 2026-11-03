@@ -142,7 +142,7 @@ export function renderGraph(
   nodesG: GroupSelection,
   defsG: Selection<SVGDefsElement, unknown, null, undefined>,
   state: RenderState,
-): void {
+): OverlayGeometry {
   const nodeIndex = new Map<string, NodeLayout>();
   for (const n of state.layout.nodes) nodeIndex.set(n.id, n);
 
@@ -151,6 +151,8 @@ export function renderGraph(
   renderEdges(edgesG, defsG, state, nodeIndex, shapeOf, overlay);
   renderResiduals(edgesG, defsG, state, overlay);
   renderNodes(nodesG, state);
+  // Returned so the view fit uses the same geometry without recomputing it.
+  return overlay;
 }
 
 /** Each node's outline, its style override applied; `rect` for an unknown id. */
@@ -470,7 +472,9 @@ function computePath(g: EdgeGeom): { d: string; mid: Point } {
   const startAnchor = g.bend[0] ?? tCenter;
   const endAnchor = g.bend[g.bend.length - 1] ?? sCenter;
 
-  const start = boundaryPoint(g.source, g.sourceShape, startAnchor);
+  // A two-headed covariance needs the same gap at its start as at its end.
+  const startGap = isSymmetricKind(g.edge.kind) ? ARROW_GAP : 0;
+  const start = boundaryPoint(g.source, g.sourceShape, startAnchor, startGap);
   const end = boundaryPoint(g.target, g.targetShape, endAnchor, ARROW_GAP);
 
   const c1Source = g.bend[0] ?? end;

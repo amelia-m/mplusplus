@@ -15,9 +15,11 @@ export interface SemColumns {
 }
 
 /**
- * Columns from Mplus's levels when every node has one; otherwise each
- * structural node's column is the length of the longest directed path
- * reaching it. Within a column, nodes keep Mplus's variable order.
+ * Columns from Mplus's levels for every node that has one. A node without
+ * a level (all of them when the header lacks the line) is an indicator if
+ * an observed variable a factor loads on, and is otherwise put in the
+ * column given by the longest directed path reaching it. Within a column,
+ * nodes keep Mplus's variable order.
  */
 export function semColumns(graph: ModelGraph): SemColumns {
   const order = new Map(
@@ -26,14 +28,15 @@ export function semColumns(graph: ModelGraph): SemColumns {
   const byOrder = (a: string, b: string): number =>
     (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity);
 
-  const fromMplus = graph.nodes.length > 0 && graph.nodes.every((n) => n.level !== null);
+  const levelOf = new Map(graph.nodes.map((n) => [n.id, n.level]));
   const kindOf = new Map(graph.nodes.map((n) => [n.id, n.kind]));
+  const loaded = new Set(
+    graph.edges.filter((e) => e.kind === 'BY' && kindOf.get(e.to) === 'observed').map((e) => e.to),
+  );
   const isIndicator = new Set(
-    fromMplus
-      ? graph.nodes.filter((n) => n.level === -1).map((n) => n.id)
-      : graph.edges
-          .filter((e) => e.kind === 'BY' && kindOf.get(e.to) === 'observed')
-          .map((e) => e.to),
+    graph.nodes
+      .filter((n) => (n.level === null ? loaded.has(n.id) : n.level === -1))
+      .map((n) => n.id),
   );
 
   const indicators = new Map<string, string[]>();
@@ -47,13 +50,13 @@ export function semColumns(graph: ModelGraph): SemColumns {
   }
 
   const structural = graph.nodes.map((n) => n.id).filter((id) => !isIndicator.has(id));
-  const column = fromMplus
-    ? new Map(graph.nodes.map((n) => [n.id, n.level as number]))
-    : longestPathDepth(graph, new Set(structural));
+  const depth = structural.some((id) => levelOf.get(id) === null)
+    ? longestPathDepth(graph, new Set(structural))
+    : new Map<string, number>();
 
   const columns: string[][] = [];
   for (const id of structural) {
-    const c = column.get(id) ?? 0;
+    const c = levelOf.get(id) ?? depth.get(id) ?? 0;
     (columns[c] ??= []).push(id);
   }
   return { columns: columns.filter(Boolean).map((c) => c.sort(byOrder)), indicators };

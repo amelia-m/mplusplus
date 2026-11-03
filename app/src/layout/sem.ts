@@ -5,7 +5,7 @@
  * (docs/diagram-conventions.md D2, D4-D8). Sides are stored, not
  * coordinates, so the renderer can follow dragged nodes.
  */
-import { isSymmetricKind, type GraphEdge, type ModelGraph } from '../model/graph.js';
+import { isSymmetricKind, type ModelGraph } from '../model/graph.js';
 import type {
   EdgeLayout,
   LayoutEngine,
@@ -129,7 +129,7 @@ export function placeSem(graph: ModelGraph, w: number, h: number): LayoutResult 
     .forEach((n, k) => nodes.push(box(n.id, x, k * (h + BLOCK_GAP))));
 
   const residuals = residualSides(graph, indicators, fanSide);
-  const edges = graph.edges.map((e) => edgeLayout(e, graph, nodes, residuals, fanSide));
+  const edges = edgeLayouts(graph, nodes, residuals, fanSide);
   const right = Math.max(0, ...nodes.map((n) => n.x + n.width));
   const bottom = Math.max(0, ...nodes.map((n) => n.y + n.height));
   return { nodes, edges, residuals, width: right, height: bottom };
@@ -209,9 +209,12 @@ function residualSides(
   for (const [latent, fan] of indicators) for (const f of fan) factorOf.set(f, latent);
   return graph.nodes
     .filter((n) => n.residual !== null)
-    .map((n) => {
+    .map((n): ResidualLayout => {
       const factor = factorOf.get(n.id);
-      if (factor !== undefined) return { id: n.id, side: fanSide.get(factor)! };
+      // A factor laid out outside any column has no fan side; its
+      // indicators then follow the rule for other variables.
+      const away = factor !== undefined ? fanSide.get(factor) : undefined;
+      if (away !== undefined) return { id: n.id, side: away };
       if (n.kind === 'observed') return { id: n.id, side: 'right' };
       return { id: n.id, side: fanSide.get(n.id) === 'top' ? 'bottom' : 'top' };
     });
@@ -219,36 +222,41 @@ function residualSides(
 
 /**
  * Directed paths are straight (no bends). A covariance becomes a curve:
- * between residuals when both ends are dependent variables (D5), bulging
- * to the residuals' side; otherwise between the nodes, to a free side
- * (D8): for a pair one above the other, left unless a left fan is there;
- * for a pair side by side, bottom when both residuals point down, else top.
+ * between residuals when both ends are dependent variables with residuals
+ * (D5), otherwise between the nodes. It bulges to the residuals' side when
+ * both face the same way; else to a free side (D8): for a pair one above
+ * the other, left unless a left fan is there; for a pair side by side,
+ * bottom when both residuals point down, else top.
  */
-function edgeLayout(
-  e: GraphEdge,
+function edgeLayouts(
   graph: ModelGraph,
   nodes: NodeLayout[],
   residuals: ResidualLayout[],
   fanSide: Map<string, Side>,
-): EdgeLayout {
-  if (!isSymmetricKind(e.kind)) return { id: e.id, bend: [] };
+): EdgeLayout[] {
   const dependent = new Set(
     graph.edges.filter((d) => d.kind === 'BY' || d.kind === 'ON').map((d) => d.to),
   );
   const residualSide = new Map(residuals.map((r) => [r.id, r.side]));
-  const a = residualSide.get(e.from);
-  const b = residualSide.get(e.to);
-  if (dependent.has(e.from) && dependent.has(e.to) && a !== undefined && a === b) {
-    return { id: e.id, bend: [], curve: { side: a, attach: 'residual' } };
-  }
-  const pa = nodes.find((n) => n.id === e.from)!;
-  const pb = nodes.find((n) => n.id === e.to)!;
-  const stacked = Math.abs(pa.y - pb.y) >= Math.abs(pa.x - pb.x);
-  let side: Side;
-  if (stacked) {
-    side = fanSide.get(e.from) === 'left' || fanSide.get(e.to) === 'left' ? 'right' : 'left';
-  } else {
-    side = a === 'bottom' && b === 'bottom' ? 'bottom' : 'top';
-  }
-  return { id: e.id, bend: [], curve: { side, attach: 'node' } };
+  const at = new Map(nodes.map((n) => [n.id, n]));
+  return graph.edges.map((e): EdgeLayout => {
+    if (!isSymmetricKind(e.kind)) return { id: e.id, bend: [] };
+    const a = residualSide.get(e.from);
+    const b = residualSide.get(e.to);
+    const attach =
+      dependent.has(e.from) && dependent.has(e.to) && a !== undefined && b !== undefined
+        ? 'residual'
+        : 'node';
+    if (attach === 'residual' && a === b) return { id: e.id, bend: [], curve: { side: a!, attach } };
+    const pa = at.get(e.from)!;
+    const pb = at.get(e.to)!;
+    const stacked = Math.abs(pa.y - pb.y) >= Math.abs(pa.x - pb.x);
+    let side: Side;
+    if (stacked) {
+      side = fanSide.get(e.from) === 'left' || fanSide.get(e.to) === 'left' ? 'right' : 'left';
+    } else {
+      side = a === 'bottom' && b === 'bottom' ? 'bottom' : 'top';
+    }
+    return { id: e.id, bend: [], curve: { side, attach } };
+  });
 }

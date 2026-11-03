@@ -56,6 +56,15 @@ describe('semColumns', () => {
     expect(indicators.get('fa')).not.toContain('fb');
   });
 
+  it('keeps Mplus\'s columns when one node has no level (all levels were dropped)', () => {
+    const g = load('syn_sem.dgm');
+    g.nodes.push({ id: 'extra', label: 'extra', kind: 'observed', level: null, residual: null });
+    g.edges.push({ ...g.edges[0], id: 'ON:fc->extra', from: 'fc', to: 'extra', kind: 'ON' });
+    const { columns } = semColumns(g);
+    expect(columns.slice(0, 4)).toEqual([['z1'], ['fa'], ['fb'], ['fc']]);
+    expect(columns.flat()).toContain('extra');
+  });
+
   it('terminates on a feedback loop without levels', () => {
     const g = withoutLevels(load('syn_path.dgm'));
     g.edges.push({ ...g.edges.find((e) => e.kind === 'ON')!, id: 'ON:d1->m1', from: 'd1', to: 'm1' });
