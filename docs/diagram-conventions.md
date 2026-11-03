@@ -20,6 +20,8 @@ Why the app draws what it draws, and what each choice rests on. Amelia, 2026-11-
 | D8 | Covariance curves bulge to a free side, and past stacked nodes | Observed, Shown | Mplus `ex5.1`, `ex5.11`; Kline Fig 6.2, 7.1. A curve inside a column cut through nodes when tried on 2026-10-16 (`TODO.md`) | 2026-11-02 |
 | D9 | `sem` is the default engine; ELK stays available through a small picker | Choice | Amelia, 2026-11-02: "y" | 2026-11-02 |
 | D10 | Nothing is drawn for a parameter Mplus does not estimate: a `999.000` row carries no value | Observed | `syn_path`: Mplus draws k1-k3 curves with no value | 2026-11-02 |
+| D12 | Residual sides: an indicator's points away from its factor; otherwise observed variables take the right and latents the upper left (lower left when their own indicators are above) | Observed | Mplus `syn_path`, `ex3.11`, `syn_sem`, `ex5.11` | 2026-11-02, while building |
+| D13 | A column standing in the way of a path that skips it moves down until the path clears it | Observed | Mplus lowers `fb` in `syn_sem`, `m1` in `syn_path` and `ex3.11`'s middle column looks the same; the rule is our reading | 2026-11-02, while building |
 | D11 | Weighted analyses carry a caption. Mplus does not show this; it extends Mplus | Choice | Amelia, 2026-11-01. Mplus checked by her screenshot of `lcsmcn` | 2026-11-01 |
 
 ## Open, with evidence so far
