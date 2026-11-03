@@ -37,8 +37,10 @@ import {
   loadSession,
   restoreSession,
   saveSession,
+  sameSaveState,
   toSession,
   type SavedSession,
+  type SaveState,
   type SessionStorage,
 } from './state/autosave.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
@@ -71,6 +73,10 @@ let engineName =
 let current: { fileName: string; dgmText: string } | null = null;
 /** Set by Discard, so no save lands between clearing the slot and the reload. */
 let discarding = false;
+/** What the slot holds now, so a save that would write the same is skipped. */
+let lastSaved: SaveState | null = null;
+/** Set when storage refused a save, so the warning is shown once per diagram. */
+let saveRefused = false;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -111,11 +117,19 @@ const notice = document.querySelector<HTMLDivElement>('#notice')!;
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
 
-function relayout(): void {
+/**
+ * Lay the loaded model out again, with engine `name` when given. The engine
+ * becomes the current one (the one the next autosave records) only once its
+ * layout succeeds.
+ */
+function relayout(name = engineName): void {
   const graph = useStore.getState().graph;
   if (!graph) return;
-  runLayout(graph)
-    .then(redraw)
+  runLayout(graph, name)
+    .then(() => {
+      engineName = name;
+      redraw();
+    })
     .catch((err: unknown) => {
       console.error(err);
       toast(`Layout failed: ${err instanceof Error ? err.message : String(err)}`, true);
@@ -132,10 +146,7 @@ mountToolbar(toolbarHost, {
   engine: engineName,
   // Switching engines lays the model out again, so like Re-run layout it
   // drops styles and undo history (open item in TODO.md).
-  onEngineChange: (name) => {
-    engineName = name;
-    relayout();
-  },
+  onEngineChange: (name) => relayout(name),
 });
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
@@ -195,46 +206,82 @@ onGestureEnd(() => fitViewBox());
 // burst of changes (a drag) writes once.
 const AUTOSAVE_DELAY_MS = 400;
 let saveTimer: number | undefined;
+
+/** The state a save would write now, or null when there is no diagram to save. */
+function saveState(): SaveState | null {
+  const s = useStore.getState();
+  if (!current || !s.graph || !s.layout) return null;
+  return { file: current, engine: engineName, layout: s.layout, slice: historySlice(s) };
+}
+
+function saveNow(): void {
+  window.clearTimeout(saveTimer);
+  const state = saveState();
+  if (!storage || discarding || !current || !state) return;
+  if (lastSaved && sameSaveState(lastSaved, state)) return;
+  const session = toSession(current.fileName, current.dgmText, state.engine, state.layout, state.slice, new Date());
+  if (saveSession(storage, session)) {
+    lastSaved = state;
+  } else {
+    lastSaved = null;
+    if (!saveRefused) toast('Autosave is off for this diagram: browser storage refused it.', true);
+    saveRefused = true;
+  }
+}
+
 useStore.subscribe(() => {
   if (!storage) return;
   window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => {
-    const s = useStore.getState();
-    if (discarding || !current || !s.graph || !s.layout) return;
-    const session = toSession(current.fileName, current.dgmText, engineName, s.layout, historySlice(s), new Date());
-    if (!saveSession(storage, session)) console.warn('Autosave failed: browser storage refused the diagram.');
-  }, AUTOSAVE_DELAY_MS);
+  saveTimer = window.setTimeout(saveNow, AUTOSAVE_DELAY_MS);
 });
+// A reload or tab close within the delay would otherwise lose the last change.
+window.addEventListener('pagehide', saveNow);
 
 document.querySelector('#notice-close')!.addEventListener('click', () => (notice.hidden = true));
-document.querySelector('#notice-discard')!.addEventListener('click', () => {
-  // Undo cannot bring a discarded diagram back; the reload starts empty.
+document.querySelector('#notice-discard')!.addEventListener('click', discardAndReload);
+
+/** Clear the slot and reload empty. Undo cannot bring the diagram back. */
+function discardAndReload(): void {
   discarding = true;
+  window.clearTimeout(saveTimer);
   if (storage) clearSession(storage);
   window.location.reload();
-});
+}
 
-if (saved) restore(saved);
+if (saved) void restore(saved);
 
-/** Bring back the autosaved diagram, as it was, with a notice offering Discard. */
-function restore(session: SavedSession): void {
+/**
+ * Bring back the autosaved diagram with a notice offering Discard: as it
+ * was, or laid out again when the saved layout no longer fits the graph.
+ * If anything fails part way, the slot is discarded and the page reloads
+ * empty, so a half-restored diagram is neither shown nor saved again.
+ */
+async function restore(session: SavedSession): Promise<void> {
   try {
     const { graph, layout, slice } = restoreSession(session);
-    cancelNodeDrag();
-    endActiveGesture();
-    useStore.getState().loadGraph(graph, layout);
+    if (layout) {
+      cancelNodeDrag();
+      endActiveGesture();
+      useStore.getState().loadGraph(graph, layout);
+    } else {
+      await runLayout(graph);
+    }
     useStore.setState(slice);
     const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
     t.getState().clear();
-    current = { fileName: session.fileName, dgmText: session.dgmText };
     redraw();
+    current = { fileName: session.fileName, dgmText: session.dgmText };
+    // The slot already holds this diagram as restored; saving it again
+    // unchanged would only move `savedAt` to now.
+    if (layout) lastSaved = saveState();
     dropzone.classList.add('hidden');
     const when = new Date(session.savedAt).toLocaleString();
-    document.querySelector('#notice-text')!.textContent = `Restored ${session.fileName} (saved ${when}).`;
+    const how = layout ? '' : ' Laid out again: the saved layout no longer fits the model.';
+    document.querySelector('#notice-text')!.textContent = `Restored ${session.fileName} (saved ${when}).${how}`;
     notice.hidden = false;
   } catch (err) {
     console.warn('Autosaved diagram could not be restored; discarding it.', err);
-    if (storage) clearSession(storage);
+    discardAndReload();
   }
 }
 
@@ -245,6 +292,7 @@ async function handleFile(file: File): Promise<void> {
       const { graph, text } = await loadDgmFile(file);
       await runLayout(graph);
       current = { fileName: file.name, dgmText: text };
+      saveRefused = false;
       notice.hidden = true;
       redraw();
       dropzone.classList.add('hidden');
@@ -284,9 +332,9 @@ function toast(msg: string, error = false): void {
   }, 3000);
 }
 
-async function runLayout(graph: ModelGraph): Promise<void> {
-  const engine = getLayoutEngine(engineName);
-  if (!engine) throw new Error(`Layout engine missing: ${engineName}`);
+async function runLayout(graph: ModelGraph, name = engineName): Promise<void> {
+  const engine = getLayoutEngine(name);
+  if (!engine) throw new Error(`Layout engine missing: ${name}`);
   const result = await engine.layout(graph, {
     width: 1200,
     height: 800,

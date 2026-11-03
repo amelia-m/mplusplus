@@ -11,6 +11,7 @@ import {
   loadSession,
   readSession,
   restoreSession,
+  sameSaveState,
   saveSession,
   toSession,
   type SessionStorage,
@@ -44,11 +45,28 @@ describe('autosave', () => {
     expect(loadSession(storage)).toEqual(session());
   });
 
-  it('restores the graph from the saved text, with the saved positions, styles and p-values', () => {
+  it('restores the graph from the saved text, with the saved layout, positions, styles and p-values', () => {
     const r = restoreSession(session());
     expect(r.graph.nodes.map((n) => n.id).sort()).toEqual(buildGraph(parseDgm(text)).nodes.map((n) => n.id).sort());
-    expect(r.layout.nodes.length).toBe(layout.nodes.length);
+    expect(r.layout).toEqual(layout);
     expect(r.slice).toEqual(slice);
+  });
+
+  it('drops a saved layout that no longer fits the graph, so the model is laid out again', () => {
+    const withNodes = (nodes: unknown[]) => {
+      const s = session();
+      s.layout = { ...s.layout, nodes: nodes as typeof layout.nodes };
+      return restoreSession(s).layout;
+    };
+    const [first, ...rest] = layout.nodes;
+    expect(withNodes(rest)).toBeNull(); // a node missing (ids changed)
+    expect(withNodes([{ ...first, id: 'renamed' }, ...rest])).toBeNull();
+    expect(withNodes([null, ...rest])).toBeNull();
+    expect(withNodes([{ ...first, x: Number.NaN }, ...rest])).toBeNull();
+    expect(withNodes([first, first, ...rest])).toBeNull(); // a node twice
+    const s = session();
+    s.layout = { ...s.layout, edges: [...s.layout.edges, { id: 'ON:gone->away' }] };
+    expect(restoreSession(s).layout).toBeNull();
   });
 
   it('fills global style fields added since the save with their defaults', () => {
@@ -65,15 +83,27 @@ describe('autosave', () => {
     expect(readSession(JSON.stringify({ ...session(), dgmText: undefined }))).toBeNull();
   });
 
-  it('reports a refused save (storage full) instead of throwing', () => {
-    const full: SessionStorage = {
-      getItem: () => null,
+  it('reports a refused save (storage full) and clears the older diagram left in the slot', () => {
+    const storage = memoryStorage();
+    saveSession(storage, session());
+    const full = {
+      ...storage,
       setItem: () => {
         throw new Error('QuotaExceededError');
       },
-      removeItem: () => {},
     };
-    expect(saveSession(full, session())).toBe(false);
+    expect(saveSession(full, { ...session(), fileName: 'other.dgm' })).toBe(false);
+    expect(loadSession(storage)).toBeNull();
+  });
+
+  it('treats a save as unchanged only when the file, engine, layout and undoable slice are all the same', () => {
+    const file = { fileName: 'syn_sem.dgm' };
+    const base = { file, engine: 'sem', layout, slice };
+    expect(sameSaveState(base, { ...base, slice: { ...slice } })).toBe(true);
+    expect(sameSaveState(base, { ...base, file: { ...file } })).toBe(false); // the same file loaded again
+    expect(sameSaveState(base, { ...base, engine: 'elk-layered' })).toBe(false);
+    expect(sameSaveState(base, { ...base, layout: { ...layout } })).toBe(false);
+    expect(sameSaveState(base, { ...base, slice: { ...slice, positions: {} } })).toBe(false);
   });
 
   it('clears the slot on Discard', () => {
