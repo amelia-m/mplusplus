@@ -160,8 +160,10 @@ Placement: each latent and its fan form a block. Bottom or top fan: indicators i
 ## Baseline
 
 - Before Task 1 (after merging `main`, a6074ce): 282 tests pass, build clean.
-- Paths behind boxes: to fill in at Task 3 Step 4.
+- Paths behind boxes, after Task 3 (directed paths, centre to centre, through an unrelated box; `_scratch/sem-baseline.test.ts`, ELK with straight paths): `dc_tol_cfaallcorrelations` sem 2, elk 3; `dc_tol_cfa_step3` 2, 3; `dc_tol_sem` 2, 6; `idnfc41b` 12, 32; `lcsmcn` 9, 14; `ms_fig2` 0, 13; `pcwas_cfa` 0, 4; `syn_cint` 0, 4; `syn_label` 0, 4; `syn_path` 0, 1; `syn_range` 0, 1; `syn_sem` 0, 4; `syn_twofactor` 0, 1. Never worse than ELK. Left over: paths among variables stacked in one column, as in Mplus's own `idnfc41b`.
 
 ## Rulings
 
 - Task 1: the planned 999 edge test passed before any change, because no covariance value is stored (only codes 1 and 11 attach). Replaced by a test that a 999 residual row gives no estimate. TODO entry rewritten. Residual rows are not filtered by group, like edge rows; multi-group stays an open decision.
+- Task 3: residual sides follow Mplus more closely than the plan said: observed variables right, latents top (bottom when their own fan is on top), indicators away from their factor (`syn_path`, `ex3.11`, `syn_sem`, `ex5.11`).
+- Task 3: added a rule the plan lacked: a column standing in the way of a path that skips it moves down until the path clears it, as Mplus lowers `fb` in `syn_sem`. Without it `fa -> fc` ran behind `fb`.
