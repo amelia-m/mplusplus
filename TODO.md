@@ -12,6 +12,11 @@ synthetic fixtures in `dgm/` (see `dgm/README.md`).
 
 **Parity with Mplus's Diagrammer is the minimum, not the aim (Amelia, 2026-11-01).** "We should be able to demonstrate on any given diagram that we can output virtually identical diagrams to mplus in parity mode but the whole point of this is to improve upon/extend the capabilities." So the app needs a parity mode whose output can be shown to match Mplus's on any diagram, and everything else improves on or extends it.
 
+## Repository
+
+- [ ] **Choose a licence (Amelia, 2026-11-03: the repo "should" have one).** Checked 2026-11-03: the repository is public (unauthenticated GitHub API: `visibility` public), GitHub detects no licence, `main` has no `LICENSE` file and `app/package.json` names none, so others may read the code but not reuse it. It is a personal project, not university work (Amelia, 2026-11-03), so the choice is hers. Options given: MIT (recommended), Apache-2.0, GPL-3.0, AGPL-3.0. Also open: whether her synthetic fixtures in `dgm/` take the code's licence or CC0; the third-party fixtures keep their own (CC0, CC BY 4.0, attributed in `dgm/README.md`).
+- [ ] **Deploy target (asked 2026-11-03).** The build is a static site, so any static host works with no code changes. Recommended: GitHub Pages (a workflow file plus enabling Pages in the repository settings); Vercel or Netlify add preview links per pull request. Streamlit and shinyapps.io do not fit; Posit Connect Cloud's support for a static Vite build was not checked. Before going public: the licence above, and the on-page AI credit (done on `docs/ai-disclosure`).
+
 ## Mplus parity and extensions
 
 - [ ] **Labels collide (seen in the app 2026-11-02, `sem` engine).** A covariance curve's arrowhead lands on the residual value at its end (`syn_sem` x1, x2, c4); `syn_path` m1's residual value touches the m1 -> d2 path. Mplus's own diagrams collide the same way, often worse (`dc_tol_cfaallcorrelations`), so this is where the app can do better. Decision: approach (move labels along their line, offset residual values from curve ends, or a general collision pass), and whether parity mode keeps Mplus's placement.
