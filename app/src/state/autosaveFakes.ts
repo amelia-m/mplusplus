@@ -3,7 +3,7 @@
  * memory. Used only by the autosave tests; nothing in the app imports it.
  */
 import type { SessionStorage } from './autosave.js';
-import type { TabLocks } from './autosaveTabs.js';
+import type { TabChannel, TabLocks } from './autosaveTabs.js';
 
 /** `localStorage` or `sessionStorage` in memory, with its items exposed. */
 export function memoryStorage(initial: Record<string, string> = {}): SessionStorage & { items: Map<string, string> } {
@@ -69,6 +69,26 @@ export function fakeBrowser() {
   };
   const close = (id: string) => release(`mplusplus.tab.${id}`);
   return { locks, close };
+}
+
+/**
+ * A `BroadcastChannel` between tabs, in memory: a message one tab posts
+ * reaches every other tab's listeners (not its own), asynchronously.
+ */
+export function fakeChannelBus() {
+  const tabs: Array<Array<(m: unknown) => void>> = [];
+  return {
+    join(): TabChannel {
+      const mine: Array<(m: unknown) => void> = [];
+      tabs.push(mine);
+      return {
+        post: (m) => {
+          for (const t of tabs) if (t !== mine) for (const h of t) setTimeout(() => h(m), 0);
+        },
+        listen: (h) => void mine.push(h),
+      };
+    },
+  };
 }
 
 /** Ids `t1`, `t2`, ... in order. */

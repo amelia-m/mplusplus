@@ -6,8 +6,8 @@ import { buildGraph } from '../model/graph.js';
 import { placeSem } from '../layout/sem.js';
 import { DEFAULT_GLOBAL_STYLE } from '../render/styles.js';
 import { LEGACY_KEY, listSlots, loadSession, saveSession, slotKey, toSession, type SaveState } from './autosave.js';
-import { AutosaveController, DISCARDED_KEY, MAX_SLOTS, type AutosaveDeps } from './autosaveController.js';
-import { TAB_ID_KEY } from './autosaveTabs.js';
+import { AutosaveController, MAX_SLOTS, type AutosaveDeps } from './autosaveController.js';
+import { TAB_ID_KEY, type TabLocks } from './autosaveTabs.js';
 import { fakeBrowser, ids, memoryStorage } from './autosaveFakes.js';
 
 const text = readFileSync(join(resolve(__dirname, '../../../dgm'), 'syn_path.dgm'), 'utf8');
@@ -17,7 +17,7 @@ const state = (file = {}): SaveState => ({ file, engine: 'sem', layout, slice })
 const input = (fileName: string, s = state()) => ({ fileName, dgmText: text, state: s });
 
 /** One browser: shared localStorage and locks; each tab gets its own sessionStorage. */
-function browser() {
+function browser(locksAvailable = true) {
   const storage = memoryStorage();
   const { locks, close } = fakeBrowser();
   const nextId = ids();
@@ -25,76 +25,91 @@ function browser() {
   const tab = (tabStore = memoryStorage()) => {
     const deps: AutosaveDeps = {
       storage,
-      locks,
+      locks: locksAvailable ? locks : undefined,
       tabStore,
       newId: nextId,
       now: () => new Date((clock += 1000)),
     };
     return { controller: new AutosaveController(deps), tabStore };
   };
-  return { storage, locks, close, tab };
+  /** A tab that has started and saved `fileName`. */
+  const saving = async (fileName: string) => {
+    const t = tab();
+    await t.controller.start();
+    t.controller.save(input(fileName));
+    return t;
+  };
+  return { storage, locks, close, tab, saving };
 }
 
+const names = (b: ReturnType<typeof browser>) => listSlots(b.storage).map((s) => s.session.fileName).sort();
+
 describe('AutosaveController', () => {
-  it('saves to its own slot and gets it back after a reload', async () => {
+  it('saves to its own slot and restores it after a reload', async () => {
     const b = browser();
-    const { controller, tabStore } = b.tab();
-    expect(await controller.start()).toBeNull();
-    expect(controller.save(input('a.dgm'))).toBe('saved');
-    b.close(controller.id!); // reload: the old page goes, the new one keeps the tab's sessionStorage
-    const reloaded = b.tab(tabStore).controller;
-    expect((await reloaded.start())?.fileName).toBe('a.dgm');
-    expect(reloaded.id).toBe(controller.id);
+    const a = await b.saving('a.dgm');
+    b.close(a.controller.id!); // reload: the old page goes, the new one keeps the tab's sessionStorage
+    const reloaded = b.tab(a.tabStore).controller;
+    expect(await reloaded.start()).toEqual({ restore: expect.objectContaining({ fileName: 'a.dgm' }), offer: null });
+    expect(reloaded.id).toBe(a.controller.id);
   });
 
-  it('keeps two open tabs apart: neither overwrites nor restores the other', async () => {
+  it('keeps two open tabs apart: each writes only its own slot and is offered nothing of the other', async () => {
     const b = browser();
-    const one = b.tab();
+    const one = await b.saving('one.dgm');
     const two = b.tab();
-    await one.controller.start();
-    expect(await two.controller.start()).toBeNull(); // one's slot is empty anyway
-    one.controller.save(input('one.dgm'));
+    expect(await two.controller.start()).toEqual({ restore: null, offer: null }); // one is open
     two.controller.save(input('two.dgm'));
     expect(loadSession(b.storage, slotKey(one.controller.id!))?.fileName).toBe('one.dgm');
     expect(loadSession(b.storage, slotKey(two.controller.id!))?.fileName).toBe('two.dgm');
-    const three = b.tab();
-    expect(await three.controller.start()).toBeNull(); // both are open
-    b.close(one.controller.id!);
-    b.close(two.controller.id!);
-    b.close(three.controller.id!);
-    // Reloading the first tab still brings back its own diagram, whatever the others saved.
-    expect((await b.tab(one.tabStore).controller.start())?.fileName).toBe('one.dgm');
   });
 
-  it("gives a new tab a copy of the most recent closed tab's diagram, and keeps the original for that tab", async () => {
+  it("offers a new tab the most recent closed tab's diagram, and writes nothing until it is edited", async () => {
     const b = browser();
-    const old = b.tab();
-    await old.controller.start();
-    old.controller.save(input('older.dgm'));
-    const recent = b.tab();
-    await recent.controller.start();
-    recent.controller.save(input('recent.dgm'));
+    const old = await b.saving('older.dgm');
+    const recent = await b.saving('recent.dgm');
     b.close(old.controller.id!);
     b.close(recent.controller.id!);
 
     const fresh = b.tab();
-    const restored = await fresh.controller.start();
-    expect(restored?.fileName).toBe('recent.dgm');
-    expect(restored?.tabId).toBe(fresh.controller.id);
-    expect(loadSession(b.storage, slotKey(fresh.controller.id!))?.fileName).toBe('recent.dgm');
-    // The closed tab may only have been unloaded by the browser: revisited,
-    // it reloads with its id and gets its own slot back.
-    expect((await b.tab(recent.tabStore).controller.start())?.fileName).toBe('recent.dgm');
+    const { restore, offer } = await fresh.controller.start();
+    expect(restore).toBeNull();
+    expect(offer?.fileName).toBe('recent.dgm');
+    // Opened: the diagram is recorded as saved, so an unchanged save writes nothing.
+    const opened = state();
+    fresh.controller.markSaved(opened);
+    expect(fresh.controller.save(input('recent.dgm', opened))).toBe('unchanged');
+    expect(loadSession(b.storage, slotKey(fresh.controller.id!))).toBeNull();
+    expect(names(b)).toEqual(['older.dgm', 'recent.dgm']);
+    // Edited: now it is this tab's, and the original is untouched.
+    expect(fresh.controller.save(input('recent.dgm', state()))).toBe('saved');
+    expect(loadSession(b.storage, slotKey(recent.controller.id!))?.fileName).toBe('recent.dgm');
+    // The closed tab, if it was only unloaded, gets its own back.
+    expect((await b.tab(recent.tabStore).controller.start()).restore?.fileName).toBe('recent.dgm');
   });
 
-  it('restores a session from the shared slot of the first autosave builds', async () => {
+  it('offers, never restores, after its own slot is gone', async () => {
+    const b = browser();
+    const other = await b.saving('other.dgm');
+    b.close(other.controller.id!);
+    const me = await b.saving('mine.dgm');
+    me.controller.discard();
+    b.close(me.controller.id!);
+    expect(await b.tab(me.tabStore).controller.start()).toEqual({
+      restore: null,
+      offer: expect.objectContaining({ fileName: 'other.dgm' }),
+    });
+  });
+
+  it('offers a session from the shared slot of the first autosave builds, and deletes their stray keys', async () => {
     const b = browser();
     saveSession(b.storage, LEGACY_KEY, toSession('legacy.dgm', text, 'sem', layout, slice, new Date('2026-11-01T00:00:00Z')));
     b.storage.setItem(`${LEGACY_KEY}.tab`, 'stale');
-    const { controller } = b.tab();
-    expect((await controller.start())?.fileName).toBe('legacy.dgm');
-    expect(b.storage.getItem(LEGACY_KEY)).toBeNull();
+    b.storage.setItem('mplusplus.autosave.discarded', '1');
+    const { offer } = await b.tab().controller.start();
+    expect(offer?.fileName).toBe('legacy.dgm');
     expect(b.storage.getItem(`${LEGACY_KEY}.tab`)).toBeNull();
+    expect(b.storage.getItem('mplusplus.autosave.discarded')).toBeNull();
   });
 
   it('skips a save when nothing changed since the last save or the restore', async () => {
@@ -112,83 +127,58 @@ describe('AutosaveController', () => {
     expect(browser().tab().controller.save(input('a.dgm'))).toBe('not-started');
   });
 
-  it("after Discard, clears its slot and restores nothing on the next start, not even another closed tab's", async () => {
+  it('Discard deletes only its own slot', async () => {
     const b = browser();
-    const others = [b.tab(), b.tab()];
-    for (const t of others) await t.controller.start(); // both open, so neither takes the other's slot
-    others[0].controller.save(input('older.dgm'));
-    others[1].controller.save(input('other.dgm'));
-    for (const t of others) b.close(t.controller.id!);
-    const { controller, tabStore } = b.tab();
-    expect((await controller.start())?.fileName).toBe('other.dgm');
-    controller.discard();
-    expect(loadSession(b.storage, slotKey(controller.id!))).toBeNull();
-    expect(tabStore.getItem(DISCARDED_KEY)).not.toBeNull();
-    b.close(controller.id!);
-    expect(await b.tab(tabStore).controller.start()).toBeNull();
-    expect(tabStore.getItem(DISCARDED_KEY)).toBeNull(); // only the one reload
-    expect(listSlots(b.storage).map((s) => s.session.fileName)).toEqual(['older.dgm']);
+    const other = await b.saving('other.dgm');
+    b.close(other.controller.id!);
+    const me = await b.saving('mine.dgm');
+    me.controller.discard();
+    expect(names(b)).toEqual(['other.dgm']);
   });
 
   it(`keeps the ${MAX_SLOTS} most recent closed tabs' slots and every open tab's`, async () => {
     const b = browser();
     const tabs = [];
-    for (let i = 0; i < MAX_SLOTS + 2; i++) {
-      const t = b.tab();
-      await t.controller.start();
-      t.controller.save(input(`m${i}.dgm`));
-      tabs.push(t);
-    }
+    for (let i = 0; i < MAX_SLOTS + 2; i++) tabs.push(await b.saving(`m${i}.dgm`));
     const stillOpen = tabs[0]; // the oldest save, but its tab is open
     for (const t of tabs.slice(1)) b.close(t.controller.id!);
-    // A reload of the open tab triggers the tidy-up without taking over a slot.
-    b.close(stillOpen.controller.id!);
-    await b.tab(stillOpen.tabStore).controller.start();
-    const names = listSlots(b.storage).map((s) => s.session.fileName).sort();
-    expect(names).toEqual(['m0.dgm', 'm2.dgm', 'm3.dgm', 'm4.dgm', 'm5.dgm', 'm6.dgm']);
+    await b.tab().controller.start();
+    expect(names(b)).toEqual(['m0.dgm', 'm2.dgm', 'm3.dgm', 'm4.dgm', 'm5.dgm', 'm6.dgm']);
+    expect(stillOpen.controller.id).not.toBeNull();
   });
 
   it("makes room when storage is full by deleting closed tabs' slots, oldest first, never an open tab's", async () => {
     const b = browser();
-    const closedOld = b.tab();
-    await closedOld.controller.start();
-    closedOld.controller.save(input('closed-old.dgm'));
-    const closedNew = b.tab();
-    await closedNew.controller.start();
-    closedNew.controller.save(input('closed-new.dgm'));
-    const open = b.tab();
-    await open.controller.start();
-    open.controller.save(input('open.dgm'));
+    const closedOld = await b.saving('closed-old.dgm');
+    const closedNew = await b.saving('closed-new.dgm');
+    const open = await b.saving('open.dgm');
     b.close(closedOld.controller.id!);
     b.close(closedNew.controller.id!);
     const me = b.tab();
-    await me.controller.start(); // takes over closed-new
-    me.controller.save(input('mine.dgm'));
-    // Storage now holds at most 3 slots.
+    await me.controller.start();
+    // Storage holds at most 3 slots; deleting one is enough.
     const realSet = b.storage.setItem;
     b.storage.setItem = (k, v) => {
       if (!b.storage.items.has(k) && b.storage.items.size >= 3) throw new Error('QuotaExceededError');
       realSet(k, v);
     };
-    const another = b.tab();
-    await another.controller.start(); // a new tab; closed-old is the only closed slot left
-    expect(another.controller.save(input('another.dgm'))).toBe('saved');
-    const names = listSlots(b.storage).map((s) => s.session.fileName).sort();
-    expect(names).toContain('open.dgm');
-    expect(names).toContain('another.dgm');
+    const s = input('mine.dgm');
+    expect(me.controller.save(s)).toBe('refused');
+    expect(await me.controller.makeRoomAndSave(s)).toBe('saved');
+    expect(names(b)).toEqual(['closed-new.dgm', 'mine.dgm', 'open.dgm']);
+    expect(open.controller.id).not.toBeNull();
   });
 
   it("refuses a save rather than delete an open tab's slot to make room", async () => {
     const b = browser();
-    const open = b.tab();
-    await open.controller.start();
-    open.controller.save(input('open.dgm'));
+    const open = await b.saving('open.dgm');
     const me = b.tab();
     await me.controller.start();
     b.storage.setItem = () => {
       throw new Error('QuotaExceededError');
     };
     expect(me.controller.save(input('mine.dgm'))).toBe('refused');
+    expect(await me.controller.makeRoomAndSave(input('mine.dgm'))).toBe('refused');
     expect(loadSession(b.storage, slotKey(open.controller.id!))?.fileName).toBe('open.dgm');
   });
 
@@ -201,17 +191,42 @@ describe('AutosaveController', () => {
       throw new Error('QuotaExceededError');
     };
     expect(controller.save(input('b.dgm'))).toBe('refused');
+    expect(await controller.makeRoomAndSave(input('b.dgm'))).toBe('refused');
     expect(loadSession(b.storage, slotKey(controller.id!))).toBeNull();
+  });
+
+  it('deletes no other slot, for the cap or to make room, where the lock API is missing', async () => {
+    const b = browser(false);
+    for (let i = 0; i < MAX_SLOTS + 2; i++) await b.saving(`m${i}.dgm`); // no lock, so none can be told closed
+    const me = b.tab();
+    expect((await me.controller.start()).offer?.fileName).toBe('m6.dgm');
+    expect(names(b)).toHaveLength(MAX_SLOTS + 2);
+    b.storage.setItem = () => {
+      throw new Error('QuotaExceededError');
+    };
+    expect(await me.controller.makeRoomAndSave(input('mine.dgm'))).toBe('refused');
+    expect(names(b)).toHaveLength(MAX_SLOTS + 2);
+  });
+
+  it('deletes nothing where the lock API fails', async () => {
+    const b = browser();
+    const tabs = [];
+    for (let i = 0; i < MAX_SLOTS + 2; i++) tabs.push(await b.saving(`m${i}.dgm`)); // all open while saving
+    for (const t of tabs) b.close(t.controller.id!);
+    const failing: TabLocks = {
+      request: () => Promise.reject(new Error('SecurityError')),
+      query: () => Promise.reject(new Error('SecurityError')),
+    };
+    const me = new AutosaveController({ storage: b.storage, locks: failing, tabStore: null, newId: () => 'me', now: () => new Date() });
+    await me.start();
+    expect(names(b)).toHaveLength(MAX_SLOTS + 2);
   });
 
   it('keeps a duplicated tab apart from the original', async () => {
     const b = browser();
-    const original = b.tab();
-    await original.controller.start();
-    original.controller.save(input('a.dgm'));
-    const copyStore = memoryStorage({ [TAB_ID_KEY]: original.controller.id! });
-    const copy = b.tab(copyStore).controller;
-    expect(await copy.start()).toBeNull(); // the original is open, so its slot is not taken
+    const original = await b.saving('a.dgm');
+    const copy = b.tab(memoryStorage({ [TAB_ID_KEY]: original.controller.id! })).controller;
+    expect(await copy.start()).toEqual({ restore: null, offer: null }); // the original is open
     expect(copy.id).not.toBe(original.controller.id);
   });
 });

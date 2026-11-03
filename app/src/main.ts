@@ -34,6 +34,7 @@ import { modelCaptions } from './model/caption.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
 import { restoreSession, type SavedSession, type SaveState, type SessionStorage } from './state/autosave.js';
 import { AutosaveController } from './state/autosaveController.js';
+import type { TabChannel } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
@@ -62,12 +63,22 @@ const tabStore: Storage | null = (() => {
     return null;
   }
 })();
+/** A `BroadcastChannel` to this origin's other tabs, or undefined where the browser lacks it. */
+function tabChannel(): TabChannel | undefined {
+  if (typeof BroadcastChannel === 'undefined') return undefined;
+  const channel = new BroadcastChannel('mplusplus.tabs');
+  return {
+    post: (m) => channel.postMessage(m),
+    listen: (handler) => channel.addEventListener('message', (e) => handler(e.data)),
+  };
+}
 /** Autosave (`state/autosaveController.ts`), or null where browser storage is unavailable. */
 const autosave = storage
   ? new AutosaveController({
       storage,
       locks: navigator.locks,
       tabStore,
+      channel: tabChannel(),
       newId: () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2),
       now: () => new Date(),
     })
@@ -100,6 +111,7 @@ app.innerHTML = `
   <div id="toast"></div>
   <div id="notice" class="notice" hidden>
     <span id="notice-text"></span>
+    <button type="button" id="notice-open" class="btn" hidden>Open</button>
     <button type="button" id="notice-discard" class="btn">Discard</button>
     <button type="button" id="notice-close" class="btn" title="Hide this notice">Hide</button>
   </div>
@@ -142,7 +154,7 @@ function relayout(name = engineName): void {
     });
 }
 
-mountToolbar(toolbarHost, {
+const toolbar = mountToolbar(toolbarHost, {
   onRedraw: redraw,
   onRelayout: relayout,
   engines: [
@@ -225,11 +237,15 @@ function saveNow(): void {
   window.clearTimeout(saveTimer);
   const state = saveState();
   if (!autosave || discarding || !current || !state) return;
-  const result = autosave.save({ fileName: current.fileName, dgmText: current.dgmText, state });
-  if (result === 'refused' && !saveRefused) {
-    toast('Autosave is off for this diagram: browser storage refused it.', true);
-    saveRefused = true;
-  }
+  const input = { fileName: current.fileName, dgmText: current.dgmText, state };
+  if (autosave.save(input) !== 'refused') return;
+  // Storage is full: free closed tabs' slots and try again, then say so if it still fails.
+  void autosave.makeRoomAndSave(input).then((result) => {
+    if (result === 'refused' && !saveRefused) {
+      toast('Autosave is off for this diagram: browser storage refused it.', true);
+      saveRefused = true;
+    }
+  });
 }
 
 useStore.subscribe(() => {
@@ -251,42 +267,73 @@ function discardAndReload(): void {
   window.location.reload();
 }
 
-/** Restore the diagram the controller picks, unless the user loaded one first; else save whatever is open. */
+/** The closed tab's diagram on offer (the Open button), if any. */
+let offered: SavedSession | null = null;
+
+document.querySelector('#notice-open')!.addEventListener('click', () => {
+  if (offered) void restore(offered, 'offered');
+});
+
+/**
+ * Restore this tab's own diagram after a reload, or offer a closed tab's,
+ * unless the user loaded a file first (that file is then saved).
+ */
 async function startAutosave(controller: AutosaveController): Promise<void> {
-  const session = await controller.start();
-  if (session && !fileLoaded) await restore(session);
-  else saveNow();
+  const { restore: own, offer } = await controller.start();
+  if (fileLoaded) {
+    saveNow();
+  } else if (own) {
+    await restore(own, 'own');
+  } else if (offer) {
+    offered = offer;
+    const when = new Date(offer.savedAt).toLocaleString();
+    showNotice(`A diagram from a closed tab is available: ${offer.fileName} (saved ${when}).`, 'offer');
+  }
 }
 
 if (autosave) void startAutosave(autosave);
 
+/** Show `text` in the notice bar, with Discard for a restored diagram or Open for an offered one. */
+function showNotice(text: string, kind: 'restored' | 'offer' | 'opened'): void {
+  document.querySelector('#notice-text')!.textContent = text;
+  document.querySelector<HTMLButtonElement>('#notice-discard')!.hidden = kind !== 'restored';
+  document.querySelector<HTMLButtonElement>('#notice-open')!.hidden = kind !== 'offer';
+  notice.hidden = false;
+}
+
 /**
- * Bring back the autosaved diagram with a notice offering Discard: as it
- * was, or laid out again when the saved layout no longer fits the graph.
- * If anything fails part way, the slot is discarded and the page reloads
- * empty, so a half-restored diagram is neither shown nor saved again.
+ * Load a saved diagram: this tab's own (after a reload) or one opened from
+ * an offer. It comes back as it was, or laid out again when the saved
+ * layout no longer fits the graph, with its saved engine. Nothing is
+ * written until the next edit, so an opened offer that is never edited
+ * leaves no copy. If this tab's own diagram fails to restore, its slot is
+ * discarded and the page reloads empty, so a half-restored diagram is
+ * neither shown nor saved again; a failed offer only says so.
  */
-async function restore(session: SavedSession): Promise<void> {
+async function restore(session: SavedSession, source: 'own' | 'offered'): Promise<void> {
   try {
     const { graph, layout, slice } = restoreSession(session);
+    if (getLayoutEngine(session.engine)) {
+      engineName = session.engine;
+      toolbar.setEngine(engineName);
+    }
     const placed = layout ?? (await computeLayout(graph));
     // A file the user loaded while this was laid out wins.
     if (fileLoaded) return;
     installGraph(graph, placed, slice);
     redraw();
     current = { fileName: session.fileName, dgmText: session.dgmText };
-    // The slot already holds this diagram as restored; saving it again
-    // unchanged would only move `savedAt` to now.
-    if (layout) autosave?.markSaved(saveState());
-    else saveNow();
+    offered = null;
+    autosave?.markSaved(saveState());
     dropzone.classList.add('hidden');
     const when = new Date(session.savedAt).toLocaleString();
     const how = layout ? '' : ' Laid out again: the saved layout no longer fits the model.';
-    document.querySelector('#notice-text')!.textContent = `Restored ${session.fileName} (saved ${when}).${how}`;
-    notice.hidden = false;
+    if (source === 'own') showNotice(`Restored ${session.fileName} (saved ${when}).${how}`, 'restored');
+    else showNotice(`Opened ${session.fileName} from a closed tab (saved ${when}).${how}`, 'opened');
   } catch (err) {
-    console.warn('Autosaved diagram could not be restored; discarding it.', err);
-    discardAndReload();
+    console.warn('Autosaved diagram could not be restored.', err);
+    if (source === 'own') discardAndReload();
+    else toast(`Could not open ${session.fileName}.`, true);
   }
 }
 
@@ -302,6 +349,7 @@ async function handleFile(file: File): Promise<void> {
       fileLoaded = true;
       current = { fileName: file.name, dgmText: text };
       saveRefused = false;
+      offered = null;
       notice.hidden = true;
       redraw();
       dropzone.classList.add('hidden');
