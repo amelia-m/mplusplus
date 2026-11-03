@@ -73,7 +73,9 @@ export function fakeBrowser() {
 
 /**
  * A `BroadcastChannel` between tabs, in memory: a message one tab posts
- * reaches every other tab's listeners (not its own), asynchronously.
+ * reaches every other tab's listeners (not its own) in a microtask, so it
+ * always arrives before any timer, as a reply within a wait window should
+ * in a test (a real channel is slower, but the waits are sized for it).
  */
 export function fakeChannelBus() {
   const tabs: Array<Array<(m: unknown) => void>> = [];
@@ -83,7 +85,7 @@ export function fakeChannelBus() {
       tabs.push(mine);
       return {
         post: (m) => {
-          for (const t of tabs) if (t !== mine) for (const h of t) setTimeout(() => h(m), 0);
+          for (const t of tabs) if (t !== mine) for (const h of t) queueMicrotask(() => h(m));
         },
         listen: (h) => void mine.push(h),
       };
