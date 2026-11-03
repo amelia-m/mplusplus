@@ -20,7 +20,7 @@ const tabLock = (id: string): string => `mplusplus.tab.${id}`;
 export interface TabLocks {
   request(
     name: string,
-    options: { ifAvailable: boolean },
+    options: { ifAvailable?: boolean; signal?: AbortSignal },
     callback: (lock: unknown) => Promise<unknown> | unknown,
   ): Promise<unknown>;
   query(): Promise<{ held?: Array<{ name?: string }> }>;
@@ -38,31 +38,65 @@ export function ownsSlot(writer: string | undefined, me: string, writerOpen: boo
 }
 
 /**
- * Take lock `name` if it is free and hold it until the tab closes. False
- * when another tab holds it; true when the API fails, since nothing can be
- * told apart then.
+ * True when this tab may write the slot as it unloads. Nothing can be
+ * awaited then, so whether another writer is still open cannot be asked:
+ * only a slot this tab wrote, or one nobody did, is written.
  */
-function holdLock(locks: TabLocks, name: string): Promise<boolean> {
+export function mayWriteOnPagehide(writer: string | undefined, me: string): boolean {
+  return writer === undefined || writer === me;
+}
+
+/**
+ * Take lock `name` and hold it until the tab closes: at once if it is
+ * free, or, given `waitMs`, as soon as it is released within that time.
+ * False when another tab still holds it; true when the API fails, since
+ * nothing can be told apart then.
+ */
+function holdLock(locks: TabLocks, name: string, waitMs = 0): Promise<boolean> {
   return new Promise((resolve) => {
+    const take = (lock: unknown) => {
+      resolve(lock !== null);
+      return lock !== null ? new Promise(() => {}) : undefined;
+    };
+    const options = waitMs > 0 ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true };
     locks
-      .request(name, { ifAvailable: true }, (lock) => {
-        resolve(lock !== null);
-        return lock !== null ? new Promise(() => {}) : undefined;
-      })
-      .catch(() => resolve(true));
+      .request(name, options, take)
+      .catch((err: unknown) => {
+        // A wait that timed out means the lock is still held elsewhere.
+        const name = (err as { name?: unknown } | null)?.name;
+        resolve(name !== 'AbortError' && name !== 'TimeoutError');
+      });
   });
 }
 
 /**
+ * How long a reloaded tab waits for the lock its previous page held. The
+ * browser releases that lock asynchronously, so it can still be held for
+ * a moment after the reload.
+ */
+export const RELOAD_LOCK_WAIT_MS = 500;
+
+/**
  * This tab's id: the one kept in `store` from before a reload, or a new one
  * from `newId`. A duplicated tab inherits the original's `sessionStorage`;
- * the original then still holds that id's lock, so the copy takes a new id.
+ * the original then still holds that id's lock, so the copy, after waiting
+ * `waitMs` in case it is a reload instead, takes a new id.
  */
-export async function claimTabId(locks: TabLocks | undefined, store: IdStore | null, newId: () => string): Promise<string> {
-  let id = read(store) ?? newId();
-  if (locks && !(await holdLock(locks, tabLock(id)))) {
-    id = newId();
-    await holdLock(locks, tabLock(id));
+export async function claimTabId(
+  locks: TabLocks | undefined,
+  store: IdStore | null,
+  newId: () => string,
+  waitMs = RELOAD_LOCK_WAIT_MS,
+): Promise<string> {
+  const kept = read(store);
+  let id = kept ?? newId();
+  if (locks) {
+    let got = await holdLock(locks, tabLock(id));
+    if (!got && kept !== null) got = await holdLock(locks, tabLock(id), waitMs);
+    if (!got) {
+      id = newId();
+      await holdLock(locks, tabLock(id));
+    }
   }
   try {
     store?.setItem(TAB_ID_KEY, id);

@@ -81,6 +81,15 @@ describe('autosave', () => {
     expect(readSession('{not json')).toBeNull();
     expect(readSession(JSON.stringify({ ...session(), version: 2 }))).toBeNull();
     expect(readSession(JSON.stringify({ ...session(), dgmText: undefined }))).toBeNull();
+    expect(readSession(JSON.stringify({ ...session(), tabId: 7 }))).toBeNull();
+  });
+
+  it('reads the writing tab id, and still reads a session saved before tabs had ids', () => {
+    const withTab = toSession('syn_sem.dgm', text, 'sem', layout, slice, new Date('2026-11-03T10:00:00Z'), 'tab-a');
+    expect(readSession(JSON.stringify(withTab))?.tabId).toBe('tab-a');
+    const old = readSession(JSON.stringify(session()));
+    expect(old).not.toBeNull();
+    expect(old?.tabId).toBeUndefined();
   });
 
   it('reports a refused save (storage full) and clears the older diagram left in the slot', () => {

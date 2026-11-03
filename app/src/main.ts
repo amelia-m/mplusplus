@@ -43,7 +43,7 @@ import {
   type SaveState,
   type SessionStorage,
 } from './state/autosave.js';
-import { claimTabId, isTabOpen, ownsSlot } from './state/autosaveTabs.js';
+import { claimTabId, isTabOpen, mayWriteOnPagehide, ownsSlot } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
@@ -249,12 +249,17 @@ async function slotIsOurs(writer: string | undefined): Promise<boolean> {
 /** Save after a change: only when the slot is this tab's, saying so when that changes. */
 async function autosave(): Promise<void> {
   window.clearTimeout(saveTimer);
-  if (!storage || !saveState()) return;
-  if (!(await slotIsOurs(loadSession(storage)?.tabId))) {
+  // Before the id is claimed, a later store change (or the claim's end) saves.
+  if (!storage || !tabId || !saveState()) return;
+  const writer = loadSession(storage)?.tabId;
+  if (!(await slotIsOurs(writer))) {
     if (!blockedByTab) showNotice(OTHER_TAB_NOTICE, false);
     blockedByTab = true;
     return;
   }
+  // Another tab wrote the slot since this one did, so what this tab last
+  // wrote is no guide to what the slot holds.
+  if (writer !== tabId) lastSaved = null;
   if (blockedByTab) {
     blockedByTab = false;
     notice.hidden = true;
@@ -268,11 +273,9 @@ useStore.subscribe(() => {
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => void autosave(), AUTOSAVE_DELAY_MS);
 });
-// A reload or tab close within the delay would otherwise lose the last
-// change. Nothing can be awaited here, so this writes only a slot this tab
-// wrote, or an empty one.
+// A reload or tab close within the delay would otherwise lose the last change.
 window.addEventListener('pagehide', () => {
-  if (storage && tabId && (loadSession(storage)?.tabId ?? tabId) === tabId) writeNow();
+  if (storage && tabId && mayWriteOnPagehide(loadSession(storage)?.tabId, tabId)) writeNow();
 });
 
 document.querySelector('#notice-close')!.addEventListener('click', () => (notice.hidden = true));
@@ -304,8 +307,17 @@ async function startAutosave(): Promise<void> {
   } catch {
     // No id kept across reloads.
   }
-  tabId = await claimTabId(navigator.locks, ids, newId);
-  if (!saved) return;
+  try {
+    tabId = await claimTabId(navigator.locks, ids, newId);
+  } catch (err) {
+    console.warn('Could not claim a tab id for autosave; using a new one.', err);
+    tabId = newId();
+  }
+  if (!saved) {
+    // A diagram loaded while the id was being claimed is saved now.
+    void autosave();
+    return;
+  }
   if (await slotIsOurs(saved.tabId)) {
     await restore(saved);
   } else {
