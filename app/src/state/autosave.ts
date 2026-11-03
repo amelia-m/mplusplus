@@ -29,6 +29,8 @@ export interface SavedSession {
   engine: string;
   layout: LayoutResult;
   slice: HistorySlice;
+  /** The tab that wrote it (`state/autosaveTabs.ts`); absent in a session saved before tabs had ids. */
+  tabId?: string;
 }
 
 /** The part of `Storage` autosave uses, so tests can pass a fake. */
@@ -41,8 +43,9 @@ export function toSession(
   layout: LayoutResult,
   slice: HistorySlice,
   now: Date,
+  tabId?: string,
 ): SavedSession {
-  return { version: VERSION, savedAt: now.toISOString(), fileName, dgmText, engine, layout, slice };
+  return { version: VERSION, savedAt: now.toISOString(), fileName, dgmText, engine, layout, slice, tabId };
 }
 
 /** The session in `raw`, or null when it is missing, malformed or from another version. */
@@ -65,7 +68,8 @@ export function readSession(raw: string | null): SavedSession | null {
     Array.isArray(s.layout?.nodes) &&
     Array.isArray(s.layout?.edges) &&
     typeof s.slice === 'object' &&
-    s.slice !== null;
+    s.slice !== null &&
+    (s.tabId === undefined || typeof s.tabId === 'string');
   return ok ? (s as SavedSession) : null;
 }
 
