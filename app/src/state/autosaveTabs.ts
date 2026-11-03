@@ -1,15 +1,11 @@
 /**
- * Which tab autosaves. All tabs share the one autosave slot, so two tabs
- * saving would overwrite each other (Amelia, 2026-11-03: one tab owns
- * autosave, "y"). Each tab has an id, kept in `sessionStorage` so a reload
- * keeps it, and holds a browser lock named after it while it is open (Web
- * Locks API). The slot records the id of the tab that wrote it, and a tab
- * may write the slot, or restore from it, only when it wrote it, nobody
- * did, or the writer is no longer open. So a reloaded tab gets its own
- * diagram back even with other tabs open, and another tab takes over only
- * once the writer has closed and it has a change of its own to save.
- * Where the lock API is missing or fails, no tab can tell whether another
- * is open, and the last writer wins, as before.
+ * Tab identity for autosave. Each tab saves to its own slot, named after
+ * the tab's id (Amelia, 2026-11-03: a slot per tab, after one shared slot
+ * kept losing diagrams between tabs). The id is kept in `sessionStorage`,
+ * so a reload keeps it and gets its own slot back, and the tab holds a
+ * browser lock named after it while it is open (Web Locks API), so other
+ * tabs can tell whether a slot's tab is still open. Where the lock API is
+ * missing or fails, no tab is seen as open.
  */
 
 /** `sessionStorage` key of this tab's id. */
@@ -29,24 +25,6 @@ export interface TabLocks {
 type IdStore = Pick<Storage, 'getItem' | 'setItem'>;
 
 /**
- * True when this tab may write the slot last written by tab `writer`, or
- * restore from it: no writer recorded, this tab is the writer, or the
- * writer is no longer open.
- */
-export function ownsSlot(writer: string | undefined, me: string, writerOpen: boolean): boolean {
-  return writer === undefined || writer === me || !writerOpen;
-}
-
-/**
- * True when this tab may write the slot as it unloads. Nothing can be
- * awaited then, so whether another writer is still open cannot be asked:
- * only a slot this tab wrote, or one nobody did, is written.
- */
-export function mayWriteOnPagehide(writer: string | undefined, me: string): boolean {
-  return writer === undefined || writer === me;
-}
-
-/**
  * Take lock `name` and hold it until the tab closes: at once if it is
  * free, or, given `waitMs`, as soon as it is released within that time.
  * False when another tab still holds it; true when the API fails, since
@@ -54,44 +32,22 @@ export function mayWriteOnPagehide(writer: string | undefined, me: string): bool
  */
 function holdLock(locks: TabLocks, name: string, waitMs = 0): Promise<boolean> {
   return new Promise((resolve) => {
-    const take = (lock: unknown) => {
-      resolve(lock !== null);
-      return lock !== null ? new Promise(() => {}) : undefined;
-    };
     // A plain timer and AbortController, not AbortSignal.timeout, which
     // older browsers with Web Locks (Safari before 16) lack.
     const abort = new AbortController();
     const timer = waitMs > 0 ? setTimeout(() => abort.abort(), waitMs) : undefined;
+    const take = (lock: unknown) => {
+      clearTimeout(timer);
+      resolve(lock !== null);
+      return lock !== null ? new Promise(() => {}) : undefined;
+    };
     const options = waitMs > 0 ? { signal: abort.signal } : { ifAvailable: true };
-    locks
-      .request(name, options, take)
-      .catch((err: unknown) => {
-        // A wait that was given up means the lock is still held elsewhere.
-        resolve(!abort.signal.aborted && (err as { name?: unknown } | null)?.name !== 'AbortError');
-      })
-      .finally(() => clearTimeout(timer));
+    locks.request(name, options, take).catch((err: unknown) => {
+      clearTimeout(timer);
+      // A wait that was given up means the lock is still held elsewhere.
+      resolve(!abort.signal.aborted && (err as { name?: unknown } | null)?.name !== 'AbortError');
+    });
   });
-}
-
-/**
- * Settles once the tab with id `id` has closed: its lock was released and,
- * `graceMs` later, has not been taken again, which a reload of that tab
- * would do (`claimTabId` waits up to `RELOAD_LOCK_WAIT_MS` for it). Never
- * settles where the lock API is missing or fails; no tab is ever seen as
- * open there, so nothing waits for one.
- */
-export async function whenTabCloses(locks: TabLocks | undefined, id: string, graceMs = 2 * RELOAD_LOCK_WAIT_MS): Promise<void> {
-  if (!locks) return new Promise(() => {});
-  for (;;) {
-    try {
-      // Granted only once the holder has gone; released again at once.
-      await locks.request(tabLock(id), {}, () => undefined);
-    } catch {
-      return new Promise(() => {});
-    }
-    await new Promise((r) => setTimeout(r, graceMs));
-    if (!(await isTabOpen(locks, id))) return;
-  }
 }
 
 /**
@@ -139,13 +95,16 @@ function read(store: IdStore | null): string | null {
   }
 }
 
-/** True when the tab with id `id` is open; false when it is not, or nothing can tell. */
-export async function isTabOpen(locks: TabLocks | undefined, id: string): Promise<boolean> {
-  if (!locks) return false;
+/** The ids of the open tabs; empty when nothing can tell. */
+export async function openTabIds(locks: TabLocks | undefined): Promise<Set<string>> {
+  if (!locks) return new Set();
   try {
     const { held } = await locks.query();
-    return (held ?? []).some((l) => l.name === tabLock(id));
+    const prefix = tabLock('');
+    return new Set(
+      (held ?? []).flatMap((l) => (l.name?.startsWith(prefix) ? [l.name.slice(prefix.length)] : [])),
+    );
   } catch {
-    return false;
+    return new Set();
   }
 }
