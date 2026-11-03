@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { claimTabId, isTabOpen, mayWriteOnPagehide, ownsSlot, TAB_ID_KEY, type TabLocks } from './autosaveTabs.js';
+import {
+  claimTabId,
+  isTabOpen,
+  mayWriteOnPagehide,
+  ownsSlot,
+  TAB_ID_KEY,
+  whenTabCloses,
+  type TabLocks,
+} from './autosaveTabs.js';
 
 /**
  * In-memory Web Locks with the rules used here: a lock is held until its
@@ -12,9 +20,15 @@ import { claimTabId, isTabOpen, mayWriteOnPagehide, ownsSlot, TAB_ID_KEY, type T
 function fakeBrowser() {
   const held = new Set<string>();
   const waiting = new Map<string, Array<() => void>>();
+  const release = (name: string) => {
+    held.delete(name);
+    waiting.get(name)?.shift()?.();
+  };
+  // Held until the callback's promise settles; a never-settling one holds it
+  // until `close`.
   const grant = (name: string, callback: (lock: unknown) => unknown) => {
     held.add(name);
-    void callback({ name });
+    void Promise.resolve(callback({ name })).then(() => release(name));
   };
   const locks: TabLocks = {
     request(name, options, callback) {
@@ -22,7 +36,7 @@ function fakeBrowser() {
         grant(name, callback);
         return Promise.resolve();
       }
-      if (options.ifAvailable || !options.signal) return Promise.resolve(callback(null));
+      if (options.ifAvailable) return Promise.resolve(callback(null));
       const signal = options.signal;
       return new Promise((resolve, reject) => {
         const queue = waiting.get(name) ?? [];
@@ -32,19 +46,15 @@ function fakeBrowser() {
         };
         queue.push(go);
         waiting.set(name, queue);
-        signal.addEventListener('abort', () => {
+        signal?.addEventListener('abort', () => {
           queue.splice(queue.indexOf(go), 1);
-          reject(Object.assign(new Error('timed out'), { name: 'TimeoutError' }));
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
         });
       });
     },
     query: () => Promise.resolve({ held: [...held].map((name) => ({ name })) }),
   };
-  const close = (id: string) => {
-    const name = `mplusplus.tab.${id}`;
-    held.delete(name);
-    waiting.get(name)?.shift()?.();
-  };
+  const close = (id: string) => release(`mplusplus.tab.${id}`);
   return { locks, close };
 }
 
@@ -100,6 +110,21 @@ describe('autosave tabs', () => {
     expect(copy).toBe('fresh');
     expect(await isTabOpen(locks, original)).toBe(true);
     expect(await isTabOpen(locks, copy)).toBe(true);
+  });
+
+  it('reports a tab closed once its lock is gone, but not while it is only reloading', async () => {
+    const { locks, close } = fakeBrowser();
+    const store = tabStorage();
+    const writer = await claimTabId(locks, store, ids());
+    let closed = false;
+    void whenTabCloses(locks, writer, 50).then(() => (closed = true));
+    close(writer); // the writer reloads: its old page goes...
+    await claimTabId(locks, store, () => 'fresh', 500); // ...and the new page takes the id back
+    await new Promise((r) => setTimeout(r, 80));
+    expect(closed).toBe(false);
+    close(writer); // now it closes for good
+    await new Promise((r) => setTimeout(r, 80));
+    expect(closed).toBe(true);
   });
 
   it('treats every other tab as closed where the lock API is missing or fails, so the last writer wins', async () => {

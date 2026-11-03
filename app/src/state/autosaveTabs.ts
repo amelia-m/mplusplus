@@ -58,15 +58,40 @@ function holdLock(locks: TabLocks, name: string, waitMs = 0): Promise<boolean> {
       resolve(lock !== null);
       return lock !== null ? new Promise(() => {}) : undefined;
     };
-    const options = waitMs > 0 ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true };
+    // A plain timer and AbortController, not AbortSignal.timeout, which
+    // older browsers with Web Locks (Safari before 16) lack.
+    const abort = new AbortController();
+    const timer = waitMs > 0 ? setTimeout(() => abort.abort(), waitMs) : undefined;
+    const options = waitMs > 0 ? { signal: abort.signal } : { ifAvailable: true };
     locks
       .request(name, options, take)
       .catch((err: unknown) => {
-        // A wait that timed out means the lock is still held elsewhere.
-        const name = (err as { name?: unknown } | null)?.name;
-        resolve(name !== 'AbortError' && name !== 'TimeoutError');
-      });
+        // A wait that was given up means the lock is still held elsewhere.
+        resolve(!abort.signal.aborted && (err as { name?: unknown } | null)?.name !== 'AbortError');
+      })
+      .finally(() => clearTimeout(timer));
   });
+}
+
+/**
+ * Settles once the tab with id `id` has closed: its lock was released and,
+ * `graceMs` later, has not been taken again, which a reload of that tab
+ * would do (`claimTabId` waits up to `RELOAD_LOCK_WAIT_MS` for it). Never
+ * settles where the lock API is missing or fails; no tab is ever seen as
+ * open there, so nothing waits for one.
+ */
+export async function whenTabCloses(locks: TabLocks | undefined, id: string, graceMs = 2 * RELOAD_LOCK_WAIT_MS): Promise<void> {
+  if (!locks) return new Promise(() => {});
+  for (;;) {
+    try {
+      // Granted only once the holder has gone; released again at once.
+      await locks.request(tabLock(id), {}, () => undefined);
+    } catch {
+      return new Promise(() => {});
+    }
+    await new Promise((r) => setTimeout(r, graceMs));
+    if (!(await isTabOpen(locks, id))) return;
+  }
 }
 
 /**

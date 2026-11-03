@@ -18,6 +18,8 @@ import { historyEqual, type HistorySlice } from './store.js';
  * with their own suffix, so adding them does not move this one.
  */
 export const AUTOSAVE_KEY = 'mplusplus.autosave.slot1';
+/** The writing tab's id, also in the session, kept beside it for cheap reads (`readSlotWriter`). */
+const WRITER_KEY = `${AUTOSAVE_KEY}.tab`;
 const VERSION = 1;
 
 export interface SavedSession {
@@ -82,6 +84,8 @@ export function readSession(raw: string | null): SavedSession | null {
 export function saveSession(storage: SessionStorage, session: SavedSession): boolean {
   try {
     storage.setItem(AUTOSAVE_KEY, JSON.stringify(session));
+    if (session.tabId === undefined) storage.removeItem(WRITER_KEY);
+    else storage.setItem(WRITER_KEY, session.tabId);
     return true;
   } catch {
     clearSession(storage);
@@ -118,8 +122,22 @@ export function loadSession(storage: SessionStorage): SavedSession | null {
 export function clearSession(storage: SessionStorage): void {
   try {
     storage.removeItem(AUTOSAVE_KEY);
+    storage.removeItem(WRITER_KEY);
   } catch {
     // Nothing to clear when storage is unavailable.
+  }
+}
+
+/**
+ * The id of the tab that wrote the slot, or undefined when nobody did (or
+ * a session saved before tabs had ids). Read from its own small key, so
+ * deciding whether a tab may save does not parse the whole session.
+ */
+export function readSlotWriter(storage: SessionStorage): string | undefined {
+  try {
+    return storage.getItem(WRITER_KEY) ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 

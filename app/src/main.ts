@@ -31,10 +31,11 @@ import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions } from './model/caption.js';
-import { historySlice, useStore } from './state/store.js';
+import { historySlice, useStore, type HistorySlice } from './state/store.js';
 import {
   clearSession,
   loadSession,
+  readSlotWriter,
   restoreSession,
   saveSession,
   sameSaveState,
@@ -43,7 +44,7 @@ import {
   type SaveState,
   type SessionStorage,
 } from './state/autosave.js';
-import { claimTabId, isTabOpen, mayWriteOnPagehide, ownsSlot } from './state/autosaveTabs.js';
+import { claimTabId, isTabOpen, mayWriteOnPagehide, ownsSlot, whenTabCloses } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
@@ -86,6 +87,8 @@ let saveRefused = false;
 let tabId: string | null = null;
 /** Set while another open tab owns the slot: this tab does not save, and did not restore. */
 let blockedByTab = false;
+/** Set once the user loads a `.dgm`, which then wins over a restore still in progress. */
+let fileLoaded = false;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -251,10 +254,9 @@ async function autosave(): Promise<void> {
   window.clearTimeout(saveTimer);
   // Before the id is claimed, a later store change (or the claim's end) saves.
   if (!storage || !tabId || !saveState()) return;
-  const writer = loadSession(storage)?.tabId;
+  const writer = readSlotWriter(storage);
   if (!(await slotIsOurs(writer))) {
-    if (!blockedByTab) showNotice(OTHER_TAB_NOTICE, false);
-    blockedByTab = true;
+    block(writer!);
     return;
   }
   // Another tab wrote the slot since this one did, so what this tab last
@@ -275,8 +277,32 @@ useStore.subscribe(() => {
 });
 // A reload or tab close within the delay would otherwise lose the last change.
 window.addEventListener('pagehide', () => {
-  if (storage && tabId && mayWriteOnPagehide(loadSession(storage)?.tabId, tabId)) writeNow();
+  if (storage && tabId && mayWriteOnPagehide(readSlotWriter(storage), tabId)) writeNow();
 });
+
+/** The other tab this one is waiting on, so it is watched once. */
+let watchedWriter: string | null = null;
+
+/**
+ * Stop saving because open tab `writer` owns the slot, say so, and save as
+ * soon as that tab closes, even with no further change in this one, so the
+ * diagram here is not lost on its next reload.
+ */
+function block(writer: string): void {
+  if (!blockedByTab) showNotice(OTHER_TAB_NOTICE, false);
+  blockedByTab = true;
+  if (watchedWriter === writer) return;
+  watchedWriter = writer;
+  void whenTabCloses(navigator.locks, writer).then(() => {
+    watchedWriter = null;
+    if (saveState()) {
+      void autosave();
+    } else if (blockedByTab) {
+      blockedByTab = false;
+      notice.hidden = true;
+    }
+  });
+}
 
 document.querySelector('#notice-close')!.addEventListener('click', () => (notice.hidden = true));
 document.querySelector('#notice-discard')!.addEventListener('click', discardAndReload);
@@ -313,17 +339,14 @@ async function startAutosave(): Promise<void> {
     console.warn('Could not claim a tab id for autosave; using a new one.', err);
     tabId = newId();
   }
-  if (!saved) {
-    // A diagram loaded while the id was being claimed is saved now.
+  if (!saved || fileLoaded) {
+    // A diagram loaded while the id was being claimed wins over the saved
+    // one, and is saved now.
     void autosave();
     return;
   }
-  if (await slotIsOurs(saved.tabId)) {
-    await restore(saved);
-  } else {
-    blockedByTab = true;
-    showNotice(OTHER_TAB_NOTICE, false);
-  }
+  if (await slotIsOurs(saved.tabId)) await restore(saved);
+  else block(saved.tabId!);
 }
 
 if (storage) void startAutosave();
@@ -337,16 +360,10 @@ if (storage) void startAutosave();
 async function restore(session: SavedSession): Promise<void> {
   try {
     const { graph, layout, slice } = restoreSession(session);
-    if (layout) {
-      cancelNodeDrag();
-      endActiveGesture();
-      useStore.getState().loadGraph(graph, layout);
-    } else {
-      await runLayout(graph);
-    }
-    useStore.setState(slice);
-    const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
-    t.getState().clear();
+    const placed = layout ?? (await computeLayout(graph));
+    // A file the user loaded while this was laid out wins.
+    if (fileLoaded) return;
+    installGraph(graph, placed, slice);
     redraw();
     current = { fileName: session.fileName, dgmText: session.dgmText };
     // The slot already holds this diagram as restored; saving it again
@@ -366,6 +383,7 @@ async function handleFile(file: File): Promise<void> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
+      fileLoaded = true;
       const { graph, text } = await loadDgmFile(file);
       await runLayout(graph);
       current = { fileName: file.name, dgmText: text };
@@ -411,14 +429,26 @@ function toast(msg: string, error = false): void {
 }
 
 async function runLayout(graph: ModelGraph, name = engineName): Promise<void> {
+  installGraph(graph, await computeLayout(graph, name));
+}
+
+function computeLayout(graph: ModelGraph, name = engineName): Promise<LayoutResult> {
   const engine = getLayoutEngine(name);
-  if (!engine) throw new Error(`Layout engine missing: ${name}`);
-  const result = await engine.layout(graph, {
+  if (!engine) return Promise.reject(new Error(`Layout engine missing: ${name}`));
+  return engine.layout(graph, {
     width: 1200,
     height: 800,
     nodeWidth: NODE_DIMENSIONS.width,
     nodeHeight: NODE_DIMENSIONS.height,
   });
+}
+
+/**
+ * Make `graph`, placed by `layout`, the open diagram, with `slice` (a
+ * restored diagram's positions and styles) when given, and start a fresh
+ * undo history.
+ */
+function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: HistorySlice): void {
   // A node drag still in progress would keep writing positions (stale ones,
   // one undo entry per move) into the new layout, and a gesture still open
   // would push a snapshot of the old diagram when it ends. Cancel the drag,
@@ -426,7 +456,8 @@ async function runLayout(graph: ModelGraph, name = engineName): Promise<void> {
   // it. Both are no-ops when nothing is active.
   cancelNodeDrag();
   endActiveGesture();
-  useStore.getState().loadGraph(graph, result);
+  useStore.getState().loadGraph(graph, layout);
+  if (slice) useStore.setState(slice);
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
   t.getState().clear();
 }

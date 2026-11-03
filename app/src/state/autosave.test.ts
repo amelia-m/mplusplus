@@ -10,6 +10,7 @@ import {
   clearSession,
   loadSession,
   readSession,
+  readSlotWriter,
   restoreSession,
   sameSaveState,
   saveSession,
@@ -82,6 +83,21 @@ describe('autosave', () => {
     expect(readSession(JSON.stringify({ ...session(), version: 2 }))).toBeNull();
     expect(readSession(JSON.stringify({ ...session(), dgmText: undefined }))).toBeNull();
     expect(readSession(JSON.stringify({ ...session(), tabId: 7 }))).toBeNull();
+  });
+
+  it('records the writing tab beside the slot, and forgets it when the slot is cleared or refused', () => {
+    const storage = memoryStorage();
+    saveSession(storage, toSession('a.dgm', text, 'sem', layout, slice, new Date(), 'tab-a'));
+    expect(readSlotWriter(storage)).toBe('tab-a');
+    saveSession(storage, session()); // a session without a tab id
+    expect(readSlotWriter(storage)).toBeUndefined();
+    saveSession(storage, toSession('a.dgm', text, 'sem', layout, slice, new Date(), 'tab-a'));
+    clearSession(storage);
+    expect(readSlotWriter(storage)).toBeUndefined();
+    saveSession(storage, toSession('a.dgm', text, 'sem', layout, slice, new Date(), 'tab-a'));
+    const full = { ...storage, setItem: () => { throw new Error('QuotaExceededError'); } };
+    saveSession(full, toSession('b.dgm', text, 'sem', layout, slice, new Date(), 'tab-b'));
+    expect(readSlotWriter(storage)).toBeUndefined();
   });
 
   it('reads the writing tab id, and still reads a session saved before tabs had ids', () => {
