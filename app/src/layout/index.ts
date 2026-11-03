@@ -65,7 +65,7 @@ export interface LayoutEngine {
   layout(graph: ModelGraph, opts: LayoutOpts): Promise<LayoutResult>;
 }
 
-/** Engine a loaded model is laid out with (docs/diagram-conventions.md D9). */
+/** Engine a loaded model is laid out with (docs/diagram-conventions.md D9, D14). */
 export const DEFAULT_LAYOUT_ENGINE = 'sem';
 
 /**
