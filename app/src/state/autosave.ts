@@ -1,11 +1,12 @@
 /**
- * Autosave: the open diagram is kept in the browser's storage so a reload
- * does not lose it (Amelia, 2026-11-03: restore automatically, with a
- * Discard button; one slot for now). A session holds the `.dgm` text, the
- * layout engine, the layout and the undoable slice; restoring parses the
- * text again, so a session never stores the parsed graph. Everything here
- * is pure apart from the `SessionStorage` passed in, so it runs in tests.
- * Nothing leaves the browser.
+ * Autosave sessions: the open diagram is kept in the browser's storage so a
+ * reload does not lose it (Amelia, 2026-11-03: restore automatically, with a
+ * Discard button). A session holds the `.dgm` text, the layout engine, the
+ * layout and the undoable slice; restoring parses the text again, so a
+ * session never stores the parsed graph. Each tab saves to its own slot
+ * (`slotKey`; which slot a tab uses and restores is `autosaveController.ts`).
+ * Everything here is pure apart from the storage passed in, so it runs in
+ * tests. Nothing leaves the browser.
  */
 import { parseDgm } from '../parser/dgm.js';
 import { buildGraph, type ModelGraph } from '../model/graph.js';
@@ -13,13 +14,15 @@ import type { LayoutResult, NodeLayout } from '../layout/index.js';
 import { DEFAULT_GLOBAL_STYLE } from '../render/styles.js';
 import { historyEqual, type HistorySlice } from './store.js';
 
+/** Key prefix of the per-tab slots; the tab's id follows it. */
+export const SLOT_PREFIX = 'mplusplus.autosave.tab.';
+/** The storage key of tab `tabId`'s slot. */
+export const slotKey = (tabId: string): string => `${SLOT_PREFIX}${tabId}`;
 /**
- * Storage key of the one slot. Further slots would take the same prefix
- * with their own suffix, so adding them does not move this one.
+ * The one shared slot of the first autosave builds (before 2026-11-03). A
+ * session still under it is restored like a slot of a closed tab.
  */
-export const AUTOSAVE_KEY = 'mplusplus.autosave.slot1';
-/** The writing tab's id, also in the session, kept beside it for cheap reads (`readSlotWriter`). */
-const WRITER_KEY = `${AUTOSAVE_KEY}.tab`;
+export const LEGACY_KEY = 'mplusplus.autosave.slot1';
 const VERSION = 1;
 
 export interface SavedSession {
@@ -36,7 +39,9 @@ export interface SavedSession {
 }
 
 /** The part of `Storage` autosave uses, so tests can pass a fake. */
-export type SessionStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+export type SessionStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key'> & {
+  readonly length: number;
+};
 
 export function toSession(
   fileName: string,
@@ -76,19 +81,18 @@ export function readSession(raw: string | null): SavedSession | null {
 }
 
 /**
- * Store `session`; false when the storage refuses it (full, or disabled).
- * A refused write leaves the slot's previous value in place, which may be
- * another diagram, so the slot is cleared: a reload then starts empty
- * instead of bringing back a diagram older than the one on screen.
+ * Store `session` under `key`; false when the storage refuses it (full, or
+ * disabled). A refused write leaves the slot's previous value in place,
+ * which may be an older diagram, so the slot is cleared: a reload then
+ * starts empty instead of bringing back a diagram older than the one on
+ * screen.
  */
-export function saveSession(storage: SessionStorage, session: SavedSession): boolean {
+export function saveSession(storage: SessionStorage, key: string, session: SavedSession): boolean {
   try {
-    storage.setItem(AUTOSAVE_KEY, JSON.stringify(session));
-    if (session.tabId === undefined) storage.removeItem(WRITER_KEY);
-    else storage.setItem(WRITER_KEY, session.tabId);
+    storage.setItem(key, JSON.stringify(session));
     return true;
   } catch {
-    clearSession(storage);
+    clearSession(storage, key);
     return false;
   }
 }
@@ -111,34 +115,50 @@ export function sameSaveState(a: SaveState, b: SaveState): boolean {
   return a.file === b.file && a.engine === b.engine && a.layout === b.layout && historyEqual(a.slice, b.slice);
 }
 
-export function loadSession(storage: SessionStorage): SavedSession | null {
+export function loadSession(storage: SessionStorage, key: string): SavedSession | null {
   try {
-    return readSession(storage.getItem(AUTOSAVE_KEY));
+    return readSession(storage.getItem(key));
   } catch {
     return null;
   }
 }
 
-export function clearSession(storage: SessionStorage): void {
+export function clearSession(storage: SessionStorage, key: string): void {
   try {
-    storage.removeItem(AUTOSAVE_KEY);
-    storage.removeItem(WRITER_KEY);
+    storage.removeItem(key);
   } catch {
     // Nothing to clear when storage is unavailable.
   }
 }
 
+/** A stored session, with the key it is under and the tab that owns it. */
+export interface StoredSlot {
+  key: string;
+  /** The owning tab's id, from the key; null for the legacy shared slot. */
+  tabId: string | null;
+  session: SavedSession;
+}
+
 /**
- * The id of the tab that wrote the slot, or undefined when nobody did (or
- * a session saved before tabs had ids). Read from its own small key, so
- * deciding whether a tab may save does not parse the whole session.
+ * Every readable autosave slot in `storage`, most recently saved first: the
+ * per-tab slots and the legacy shared one. Unreadable ones are skipped.
  */
-export function readSlotWriter(storage: SessionStorage): string | undefined {
+export function listSlots(storage: SessionStorage): StoredSlot[] {
+  const keys: string[] = [];
   try {
-    return storage.getItem(WRITER_KEY) ?? undefined;
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k !== null && (k.startsWith(SLOT_PREFIX) || k === LEGACY_KEY)) keys.push(k);
+    }
   } catch {
-    return undefined;
+    return [];
   }
+  const slots: StoredSlot[] = [];
+  for (const key of keys) {
+    const session = loadSession(storage, key);
+    if (session) slots.push({ key, tabId: key === LEGACY_KEY ? null : key.slice(SLOT_PREFIX.length), session });
+  }
+  return slots.sort((a, b) => b.session.savedAt.localeCompare(a.session.savedAt));
 }
 
 export interface RestoredSession {

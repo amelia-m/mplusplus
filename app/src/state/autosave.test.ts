@@ -6,17 +6,18 @@ import { buildGraph } from '../model/graph.js';
 import { placeSem } from '../layout/sem.js';
 import { DEFAULT_GLOBAL_STYLE } from '../render/styles.js';
 import {
-  AUTOSAVE_KEY,
   clearSession,
+  LEGACY_KEY,
+  listSlots,
   loadSession,
   readSession,
-  readSlotWriter,
   restoreSession,
   sameSaveState,
   saveSession,
+  slotKey,
   toSession,
-  type SessionStorage,
 } from './autosave.js';
+import { memoryStorage } from './autosaveFakes.js';
 
 const text = readFileSync(join(resolve(__dirname, '../../../dgm'), 'syn_sem.dgm'), 'utf8');
 const layout = placeSem(buildGraph(parseDgm(text)), 120, 56);
@@ -29,21 +30,13 @@ const slice = {
 };
 const session = () => toSession('syn_sem.dgm', text, 'sem', layout, slice, new Date('2026-11-03T10:00:00Z'));
 
-function memoryStorage(): SessionStorage & { items: Map<string, string> } {
-  const items = new Map<string, string>();
-  return {
-    items,
-    getItem: (k) => items.get(k) ?? null,
-    setItem: (k, v) => void items.set(k, v),
-    removeItem: (k) => void items.delete(k),
-  };
-}
+const KEY = slotKey('tab-a');
 
 describe('autosave', () => {
   it('saves a session and loads the same one back', () => {
     const storage = memoryStorage();
-    expect(saveSession(storage, session())).toBe(true);
-    expect(loadSession(storage)).toEqual(session());
+    expect(saveSession(storage, KEY, session())).toBe(true);
+    expect(loadSession(storage, KEY)).toEqual(session());
   });
 
   it('restores the graph from the saved text, with the saved layout, positions, styles and p-values', () => {
@@ -85,19 +78,17 @@ describe('autosave', () => {
     expect(readSession(JSON.stringify({ ...session(), tabId: 7 }))).toBeNull();
   });
 
-  it('records the writing tab beside the slot, and forgets it when the slot is cleared or refused', () => {
-    const storage = memoryStorage();
-    saveSession(storage, toSession('a.dgm', text, 'sem', layout, slice, new Date(), 'tab-a'));
-    expect(readSlotWriter(storage)).toBe('tab-a');
-    saveSession(storage, session()); // a session without a tab id
-    expect(readSlotWriter(storage)).toBeUndefined();
-    saveSession(storage, toSession('a.dgm', text, 'sem', layout, slice, new Date(), 'tab-a'));
-    clearSession(storage);
-    expect(readSlotWriter(storage)).toBeUndefined();
-    saveSession(storage, toSession('a.dgm', text, 'sem', layout, slice, new Date(), 'tab-a'));
-    const full = { ...storage, setItem: () => { throw new Error('QuotaExceededError'); } };
-    saveSession(full, toSession('b.dgm', text, 'sem', layout, slice, new Date(), 'tab-b'));
-    expect(readSlotWriter(storage)).toBeUndefined();
+  it('lists the per-tab slots and the legacy shared one, newest first, skipping unreadable ones', () => {
+    const at = (iso: string, tabId?: string) => toSession('m.dgm', text, 'sem', layout, slice, new Date(iso), tabId);
+    const storage = memoryStorage({ unrelated: 'x', [slotKey('broken')]: '{not json' });
+    saveSession(storage, slotKey('a'), at('2026-11-03T10:00:00Z', 'a'));
+    saveSession(storage, LEGACY_KEY, at('2026-11-02T10:00:00Z'));
+    saveSession(storage, slotKey('b'), at('2026-11-03T12:00:00Z', 'b'));
+    expect(listSlots(storage).map((s) => [s.key, s.tabId])).toEqual([
+      [slotKey('b'), 'b'],
+      [slotKey('a'), 'a'],
+      [LEGACY_KEY, null],
+    ]);
   });
 
   it('reads the writing tab id, and still reads a session saved before tabs had ids', () => {
@@ -110,15 +101,15 @@ describe('autosave', () => {
 
   it('reports a refused save (storage full) and clears the older diagram left in the slot', () => {
     const storage = memoryStorage();
-    saveSession(storage, session());
+    saveSession(storage, KEY, session());
     const full = {
       ...storage,
       setItem: () => {
         throw new Error('QuotaExceededError');
       },
     };
-    expect(saveSession(full, { ...session(), fileName: 'other.dgm' })).toBe(false);
-    expect(loadSession(storage)).toBeNull();
+    expect(saveSession(full, KEY, { ...session(), fileName: 'other.dgm' })).toBe(false);
+    expect(loadSession(storage, KEY)).toBeNull();
   });
 
   it('treats a save as unchanged only when the file, engine, layout and undoable slice are all the same', () => {
@@ -131,11 +122,12 @@ describe('autosave', () => {
     expect(sameSaveState(base, { ...base, slice: { ...slice, positions: {} } })).toBe(false);
   });
 
-  it('clears the slot on Discard', () => {
+  it('clears one slot and leaves the others', () => {
     const storage = memoryStorage();
-    saveSession(storage, session());
-    clearSession(storage);
-    expect(storage.items.has(AUTOSAVE_KEY)).toBe(false);
-    expect(loadSession(storage)).toBeNull();
+    saveSession(storage, KEY, session());
+    saveSession(storage, slotKey('tab-b'), session());
+    clearSession(storage, KEY);
+    expect(loadSession(storage, KEY)).toBeNull();
+    expect(loadSession(storage, slotKey('tab-b'))).not.toBeNull();
   });
 });
