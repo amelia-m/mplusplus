@@ -72,6 +72,9 @@ export interface StartResult {
 export class AutosaveController {
   private tabId: string | null = null;
   private lastSaved: SaveState | null = null;
+  /** Bumped by every write attempt and restore, so a make-room retry can tell it has been overtaken. */
+  private generation = 0;
+  private discarded = false;
 
   constructor(private readonly deps: AutosaveDeps) {}
 
@@ -108,30 +111,44 @@ export class AutosaveController {
    * again after freeing space.
    */
   save(input: SaveInput): SaveResult {
-    if (!this.tabId) return 'not-started';
+    if (!this.tabId || this.discarded) return 'not-started';
     if (this.lastSaved && sameSaveState(this.lastSaved, input.state)) return 'unchanged';
+    this.generation++;
     const ok = saveSession(this.deps.storage, slotKey(this.tabId), this.toSession(input));
     this.lastSaved = ok ? input.state : null;
     return ok ? 'saved' : 'refused';
   }
 
   /**
-   * After a refused save: delete closed tabs' slots, oldest first, asking
-   * the lock API which tabs are open now, and retry after each. Deletes
-   * nothing, and returns 'refused', when it cannot tell which are open.
+   * After a refused save of `input`: delete closed tabs' slots, oldest
+   * first, asking the lock API which tabs are open now, and retry after
+   * each. Deletes nothing, and returns 'refused', when it cannot tell which
+   * are open, or when deleting every closed slot could not make room for
+   * this one. Returns 'unchanged' without touching storage when a newer
+   * save or a Discard happened while it waited, so it never writes stale
+   * work over newer work or brings a discarded diagram back.
    */
   async makeRoomAndSave(input: SaveInput): Promise<SaveResult> {
-    if (!this.tabId) return 'not-started';
+    if (!this.tabId || this.discarded) return 'not-started';
+    const generation = this.generation;
     const open = await openTabIds(this.deps.locks);
+    if (this.discarded || generation !== this.generation) return 'unchanged';
     if (!open) return 'refused';
     const key = slotKey(this.tabId);
-    const session = this.toSession(input);
-    for (const s of listSlots(this.deps.storage).reverse()) {
-      if (!isClosed(s, open, this.tabId)) continue;
+    const json = JSON.stringify(this.toSession(input));
+    const closed = listSlots(this.deps.storage)
+      .reverse()
+      .filter((s) => isClosed(s, open, this.tabId!));
+    const freeable = closed.reduce((n, s) => n + (this.deps.storage.getItem(s.key)?.length ?? 0), 0);
+    if (freeable < json.length) return 'refused';
+    for (const s of closed) {
       clearSession(this.deps.storage, s.key);
-      if (saveSession(this.deps.storage, key, session)) {
+      try {
+        this.deps.storage.setItem(key, json);
         this.lastSaved = input.state;
         return 'saved';
+      } catch {
+        // Still too full; free the next one.
       }
     }
     return 'refused';
@@ -139,11 +156,13 @@ export class AutosaveController {
 
   /** Record that `state` needs no save yet: it was restored, or opened from an offer. */
   markSaved(state: SaveState | null): void {
+    this.generation++;
     this.lastSaved = state;
   }
 
-  /** Delete this tab's slot. No other slot is touched. */
+  /** Delete this tab's slot, and save nothing more in this page (it reloads next). No other slot is touched. */
   discard(): void {
+    this.discarded = true;
     if (this.tabId) clearSession(this.deps.storage, slotKey(this.tabId));
     this.lastSaved = null;
   }

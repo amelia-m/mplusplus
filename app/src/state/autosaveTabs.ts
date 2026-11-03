@@ -28,10 +28,10 @@ type IdStore = Pick<Storage, 'getItem' | 'setItem'>;
 /**
  * Take lock `name` and hold it until the tab closes: at once if it is
  * free, or, given `waitMs`, as soon as it is released within that time.
- * False when another tab still holds it; true when the API fails, since
- * nothing can be told apart then.
+ * 'busy' when another tab still holds it; 'failed' when the API itself
+ * fails (a rejection that is not the wait being given up).
  */
-function holdLock(locks: TabLocks, name: string, waitMs = 0): Promise<boolean> {
+function holdLock(locks: TabLocks, name: string, waitMs = 0): Promise<'held' | 'busy' | 'failed'> {
   return new Promise((resolve) => {
     // A plain timer and AbortController, not AbortSignal.timeout, which
     // older browsers with Web Locks (Safari before 16) lack.
@@ -39,14 +39,14 @@ function holdLock(locks: TabLocks, name: string, waitMs = 0): Promise<boolean> {
     const timer = waitMs > 0 ? setTimeout(() => abort.abort(), waitMs) : undefined;
     const take = (lock: unknown) => {
       clearTimeout(timer);
-      resolve(lock !== null);
+      resolve(lock !== null ? 'held' : 'busy');
       return lock !== null ? new Promise(() => {}) : undefined;
     };
     const options = waitMs > 0 ? { signal: abort.signal } : { ifAvailable: true };
     locks.request(name, options, take).catch((err: unknown) => {
       clearTimeout(timer);
-      // A wait that was given up means the lock is still held elsewhere.
-      resolve(!abort.signal.aborted && (err as { name?: unknown } | null)?.name !== 'AbortError');
+      const givenUp = abort.signal.aborted || (err as { name?: unknown } | null)?.name === 'AbortError';
+      resolve(givenUp ? 'busy' : 'failed');
     });
   });
 }
@@ -80,7 +80,7 @@ const isIdMessage = (m: unknown): m is IdMessage =>
 export interface ClaimOptions {
   /** How long a reload waits for its old page's lock (`RELOAD_LOCK_WAIT_MS`). */
   waitMs?: number;
-  /** Used where the lock API is missing; without it a duplicated tab keeps the original's id. */
+  /** Used where the lock API is missing or fails; without it a duplicated tab keeps the original's id. */
   channel?: TabChannel;
   questionWaitMs?: number;
 }
@@ -90,8 +90,9 @@ export interface ClaimOptions {
  * from `newId`. A duplicated tab inherits the original's `sessionStorage`
  * and must not keep that id, or both tabs would save to one slot. With the
  * lock API, the original still holds the id's lock, so the copy, after
- * waiting `waitMs` in case it is a reload instead, takes a new id. Without
- * it, the copy asks over `channel` whether an open tab has the id, and
+ * waiting `waitMs` in case it is a reload instead, takes a new id. Where
+ * the lock API is missing or fails, the copy asks over `channel` whether an
+ * open tab has the id, and
  * takes a new one if any answers. Either way the tab then answers that
  * question for its own id.
  */
@@ -104,14 +105,17 @@ export async function claimTabId(
   const { waitMs = RELOAD_LOCK_WAIT_MS, channel, questionWaitMs = ID_QUESTION_WAIT_MS } = options;
   const kept = read(store);
   let id = kept ?? newId();
+  let lock: 'held' | 'busy' | 'failed' = 'failed';
   if (locks) {
-    let got = await holdLock(locks, tabLock(id));
-    if (!got && kept !== null) got = await holdLock(locks, tabLock(id), waitMs);
-    if (!got) {
+    lock = await holdLock(locks, tabLock(id));
+    if (lock === 'busy' && kept !== null) lock = await holdLock(locks, tabLock(id), waitMs);
+    if (lock === 'busy') {
       id = newId();
-      await holdLock(locks, tabLock(id));
+      lock = await holdLock(locks, tabLock(id));
     }
-  } else if (channel && kept !== null && (await someTabHas(channel, kept, questionWaitMs))) {
+  }
+  // Without a working lock API, ask the other tabs instead.
+  if (lock === 'failed' && channel && id === kept && (await someTabHas(channel, kept, questionWaitMs))) {
     id = newId();
   }
   channel?.listen((m) => {

@@ -238,8 +238,9 @@ function saveNow(): void {
   const state = saveState();
   if (!autosave || discarding || !current || !state) return;
   const input = { fileName: current.fileName, dgmText: current.dgmText, state };
-  if (autosave.save(input) !== 'refused') return;
-  // Storage is full: free closed tabs' slots and try again, then say so if it still fails.
+  // Storage is full: free closed tabs' slots and try again, once per
+  // diagram, then say so if it still fails.
+  if (autosave.save(input) !== 'refused' || saveRefused) return;
   void autosave.makeRoomAndSave(input).then((result) => {
     if (result === 'refused' && !saveRefused) {
       toast('Autosave is off for this diagram: browser storage refused it.', true);
@@ -265,6 +266,16 @@ function discardAndReload(): void {
   window.clearTimeout(saveTimer);
   autosave?.discard();
   window.location.reload();
+}
+
+/**
+ * Make `name` the current engine, the one the diagram on screen was laid
+ * out with and autosave records, and show it in the picker. Called only
+ * together with the install of that diagram.
+ */
+function useEngine(name: string): void {
+  engineName = name;
+  toolbar.setEngine(name);
 }
 
 /** The closed tab's diagram on offer (the Open button), if any. */
@@ -313,14 +324,12 @@ function showNotice(text: string, kind: 'restored' | 'offer' | 'opened'): void {
 async function restore(session: SavedSession, source: 'own' | 'offered'): Promise<void> {
   try {
     const { graph, layout, slice } = restoreSession(session);
-    if (getLayoutEngine(session.engine)) {
-      engineName = session.engine;
-      toolbar.setEngine(engineName);
-    }
-    const placed = layout ?? (await computeLayout(graph));
+    const engine = getLayoutEngine(session.engine) ? session.engine : engineName;
+    const placed = layout ?? (await computeLayout(graph, engine));
     // A file the user loaded while this was laid out wins.
     if (fileLoaded) return;
     installGraph(graph, placed, slice);
+    useEngine(engine);
     redraw();
     current = { fileName: session.fileName, dgmText: session.dgmText };
     offered = null;
@@ -342,10 +351,12 @@ async function handleFile(file: File): Promise<void> {
   try {
     if (kind === 'dgm') {
       const { graph, text } = await loadDgmFile(file);
-      const layout = await computeLayout(graph);
+      const engine = engineName;
+      const layout = await computeLayout(graph, engine);
       // Set in the same step as the install, so a restore still in
       // progress sees it and gives way; a load that failed never sets it.
       installGraph(graph, layout);
+      useEngine(engine);
       fileLoaded = true;
       current = { fileName: file.name, dgmText: text };
       saveRefused = false;

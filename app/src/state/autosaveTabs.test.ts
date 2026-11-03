@@ -43,6 +43,17 @@ describe('autosave tab ids', () => {
     expect(await claimTabId(undefined, store, () => 'other', { channel: bus.join(), questionWaitMs: 20 })).toBe('alone');
   });
 
+  it('falls back to asking over the channel when the lock API fails, so a duplicate still gets a new id', async () => {
+    const failing: TabLocks = {
+      request: () => Promise.reject(new Error('SecurityError')),
+      query: () => Promise.reject(new Error('SecurityError')),
+    };
+    const bus = fakeChannelBus();
+    const original = await claimTabId(failing, tabStorage(), () => 'orig', { channel: bus.join(), questionWaitMs: 20 });
+    const copy = await claimTabId(failing, tabStorage(original), () => 'fresh', { channel: bus.join(), questionWaitMs: 20 });
+    expect(copy).toBe('fresh');
+  });
+
   it('cannot tell which tabs are open where the lock API is missing or fails', async () => {
     expect(await claimTabId(undefined, tabStorage('kept'), ids())).toBe('kept');
     expect(await openTabIds(undefined)).toBeNull();

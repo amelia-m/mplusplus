@@ -140,18 +140,17 @@ describe('AutosaveController', () => {
     const b = browser();
     const tabs = [];
     for (let i = 0; i < MAX_SLOTS + 2; i++) tabs.push(await b.saving(`m${i}.dgm`));
-    const stillOpen = tabs[0]; // the oldest save, but its tab is open
+    // tabs[0] has the oldest save, but its tab stays open.
     for (const t of tabs.slice(1)) b.close(t.controller.id!);
     await b.tab().controller.start();
     expect(names(b)).toEqual(['m0.dgm', 'm2.dgm', 'm3.dgm', 'm4.dgm', 'm5.dgm', 'm6.dgm']);
-    expect(stillOpen.controller.id).not.toBeNull();
   });
 
   it("makes room when storage is full by deleting closed tabs' slots, oldest first, never an open tab's", async () => {
     const b = browser();
     const closedOld = await b.saving('closed-old.dgm');
     const closedNew = await b.saving('closed-new.dgm');
-    const open = await b.saving('open.dgm');
+    await b.saving('open.dgm');
     b.close(closedOld.controller.id!);
     b.close(closedNew.controller.id!);
     const me = b.tab();
@@ -166,7 +165,6 @@ describe('AutosaveController', () => {
     expect(me.controller.save(s)).toBe('refused');
     expect(await me.controller.makeRoomAndSave(s)).toBe('saved');
     expect(names(b)).toEqual(['closed-new.dgm', 'mine.dgm', 'open.dgm']);
-    expect(open.controller.id).not.toBeNull();
   });
 
   it("refuses a save rather than delete an open tab's slot to make room", async () => {
@@ -180,6 +178,53 @@ describe('AutosaveController', () => {
     expect(me.controller.save(input('mine.dgm'))).toBe('refused');
     expect(await me.controller.makeRoomAndSave(input('mine.dgm'))).toBe('refused');
     expect(loadSession(b.storage, slotKey(open.controller.id!))?.fileName).toBe('open.dgm');
+  });
+
+  /** A browser with one closed tab's slot and a started tab `me` whose saves are refused until `lift()`. */
+  async function fullBrowser() {
+    const b = browser();
+    const closed = await b.saving('closed.dgm');
+    b.close(closed.controller.id!);
+    const me = b.tab();
+    await me.controller.start();
+    const realSet = b.storage.setItem;
+    let full = true;
+    b.storage.setItem = (k, v) => {
+      if (full) throw new Error('QuotaExceededError');
+      realSet(k, v);
+    };
+    return { b, me, lift: () => (full = false) };
+  }
+
+  it('drops a make-room retry overtaken by a newer save, so stale work never lands over newer work', async () => {
+    const { b, me, lift } = await fullBrowser();
+    const older = input('older.dgm', state());
+    expect(me.controller.save(older)).toBe('refused');
+    const retry = me.controller.makeRoomAndSave(older);
+    lift();
+    expect(me.controller.save(input('newer.dgm', state()))).toBe('saved');
+    expect(await retry).toBe('unchanged');
+    expect(loadSession(b.storage, slotKey(me.controller.id!))?.fileName).toBe('newer.dgm');
+    expect(names(b)).toContain('closed.dgm'); // nothing deleted for the stale retry
+  });
+
+  it('drops a make-room retry after Discard, so a discarded diagram does not come back', async () => {
+    const { b, me, lift } = await fullBrowser();
+    expect(me.controller.save(input('mine.dgm'))).toBe('refused');
+    const retry = me.controller.makeRoomAndSave(input('mine.dgm'));
+    me.controller.discard();
+    lift();
+    expect(await retry).toBe('unchanged');
+    expect(loadSession(b.storage, slotKey(me.controller.id!))).toBeNull();
+    expect(me.controller.save(input('again.dgm'))).toBe('not-started');
+  });
+
+  it('deletes nothing when even every closed slot could not make room for the save', async () => {
+    const { b, me } = await fullBrowser();
+    const huge = { ...input('huge.dgm'), dgmText: text.repeat(50) };
+    expect(me.controller.save(huge)).toBe('refused');
+    expect(await me.controller.makeRoomAndSave(huge)).toBe('refused');
+    expect(names(b)).toEqual(['closed.dgm']);
   });
 
   it('reports a refused save and clears its own slot when no closed slot can make room', async () => {
