@@ -65,7 +65,7 @@ app.innerHTML = `
     <aside id="inspector"></aside>
   </main>
   <footer class="app-credit">
-    Written largely with Claude Code, Anthropic's AI coding assistant, under the direction of Amelia Miramonti, who decides and merges every change.
+    Designed by Amelia Miramonti and implemented with Claude Code (Anthropic).
   </footer>
 `;
 
