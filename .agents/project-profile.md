@@ -1,8 +1,12 @@
 # Project profile: mplusplus
 
+Ownership: a personal project, not work for the university. Amelia, 2026-11-03: "it's not. it's work adjacent but a pet project on my own time" (asked whether the university may have a say in the licence). The licence is hers to choose (open item in `TODO.md`).
+
 ## Attribution
 
-AI attribution in git and pull requests: yes. Amelia, 2026-10-16: "yes" (asked whether commits and PRs should carry AI attribution). The model must always be named (Amelia, 2026-10-16: "make sure model is specified"): commits end with a `Co-Authored-By:` trailer naming the exact model and version (for example `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`); PR descriptions end with the "Generated with Claude Code" footer followed by the exact model and version (for example "Model: Claude Opus 5.5").
+AI attribution in git and pull requests: yes. Amelia, 2026-10-16: "yes" (asked whether commits and PRs should carry AI attribution). The model must always be named (Amelia, 2026-10-16: "make sure model is specified"): commits end with a `Co-Authored-By:` trailer naming the exact model and version (for example `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`); PR descriptions end with the "Generated with Claude Code" footer followed by the exact model and version (for example "Model: Claude Opus 5.5"). Merge commits carry the trailer too (Amelia, 2026-11-03: "y"): a merge an agent makes locally ends with it, and a pull request merged on GitHub gets it by editing the merge message or by squash-merging. Found 2026-11-03: of 69 commits on `main`, the 4 without it were all merges (GitHub's merge commits for #2, #3 and #4, and a local `Merge main into feat/sem-layout`).
+
+Visible disclosure: the app's page carries a credit line naming Claude Code (Amelia, 2026-11-03: "y", asked whether a deployed site needs a visible note), and the README has an "AI assistance" section; both follow the UNL research AI guidelines (best practice 8, see the global rules) and must be kept current when other assistants contribute.
 
 ## Review, push and merge
 

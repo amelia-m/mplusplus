@@ -292,6 +292,12 @@ html, body {
   width: 56px;
 }
 
+.app-credit {
+  padding: 0 16px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 g.node { cursor: grab; touch-action: none; }
 g.node:active { cursor: grabbing; }
 g.node.selected ellipse,

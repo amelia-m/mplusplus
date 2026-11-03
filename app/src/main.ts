@@ -64,6 +64,9 @@ app.innerHTML = `
     </div>
     <aside id="inspector"></aside>
   </main>
+  <footer class="app-credit">
+    Written largely with Claude Code, Anthropic's AI coding assistant, under the direction of Amelia Miramonti, who decides and merges every change.
+  </footer>
 `;
 
 const dropzone = document.querySelector<HTMLDivElement>('#dropzone')!;
