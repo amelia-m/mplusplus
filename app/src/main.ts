@@ -13,11 +13,13 @@ import {
   setupSvg,
   renderCaption,
   renderGraph,
+  nodeShapeLookup,
   NODE_DIMENSIONS,
   type RenderState,
   type GroupSelection,
 } from './render/svg.js';
 import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
+import { overlayGeometry, overlayPoints } from './render/residual.js';
 import { wireSelection } from './render/selection.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
@@ -233,6 +235,10 @@ function fitViewBox(): void {
   const merged = s.layout ? mergeLayout(s.layout, s.positions) : null;
   const boxes = merged?.nodes ?? [];
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
+  if (merged && s.graph) {
+    const shapeOf = nodeShapeLookup(s.graph, s.nodeStyles);
+    points.push(...overlayPoints(overlayGeometry(merged, s.graph.edges, shapeOf)));
+  }
   const content = contentViewBox(boxes, { points });
   const captions = s.graph ? modelCaptions(s.graph.source) : [];
   const placed = placeCaption(content, captions.length);

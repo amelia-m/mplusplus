@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { curveGeometry, residualGeometry, RESIDUAL_LENGTH } from './residual.js';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { parseDgm } from '../parser/dgm.js';
+import { buildGraph } from '../model/graph.js';
+import { placeSem } from '../layout/sem.js';
+import { curveGeometry, overlayGeometry, overlayPoints, residualGeometry, RESIDUAL_LENGTH } from './residual.js';
 
 const box = { x: 100, y: 200, width: 120, height: 56 };
 
@@ -42,5 +47,17 @@ describe('curveGeometry', () => {
     const near = curveGeometry({ x: 0, y: 0 }, { x: 0, y: 100 }, 'right');
     const far = curveGeometry({ x: 0, y: 0 }, { x: 0, y: 300 }, 'right');
     expect(far.control.x).toBeGreaterThan(near.control.x);
+  });
+});
+
+describe('overlayGeometry', () => {
+  it('runs a covariance of two dependent variables between their residual tails (syn_path d1, d2)', () => {
+    const g = buildGraph(parseDgm(readFileSync(join(resolve(__dirname, '../../../dgm'), 'syn_path.dgm'), 'utf8')));
+    const layout = placeSem(g, 120, 56);
+    const o = overlayGeometry(layout, g.edges, () => 'rect');
+    const edge = g.edges.find((e) => (e.kind === 'WITH' || e.kind === 'COVAR') && [e.from, e.to].sort().join() === 'd1,d2')!;
+    const tail = o.residuals.get(edge.from)!.tail;
+    expect(o.curves.get(edge.id)!.d.startsWith(`M ${tail.x} ${tail.y} Q`)).toBe(true);
+    expect(overlayPoints(o)).toContainEqual(o.curves.get(edge.id)!.control);
   });
 });
