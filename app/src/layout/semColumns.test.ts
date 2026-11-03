@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
 import { buildGraph, type ModelGraph } from '../model/graph.js';
@@ -38,15 +38,33 @@ describe('semColumns', () => {
     expect(semColumns(load('ms_fig2.dgm')).columns[0]).toEqual(['eth_1', 'civ_1']);
   });
 
-  it('computes columns from the paths when the levels are missing', () => {
-    const { columns, indicators } = semColumns(withoutLevels(load('syn_sem.dgm')));
-    const col = (id: string) => columns.findIndex((c) => c.includes(id));
-    expect(col('z1')).toBeLessThan(col('fa'));
-    expect(col('fa')).toBeLessThan(col('fb'));
-    expect(col('fb')).toBeLessThan(col('fc'));
-    expect(col('fc')).toBeLessThan(col('x1'));
-    expect(indicators.get('fa')).toEqual(['a1', 'a2', 'a3']);
-  });
+  // The fallback for a missing level line (a model loaded from its .out
+  // alone, another Mplus version) is meant to place every variable where
+  // Mplus's line would. Checked on every fixture, and on the local
+  // User's Guide and published-model runs in docs/reference/ when present
+  // (40 models on 2026-11-03, all identical). Columns are compared as laid
+  // out, with empty columns closed up, not the line's raw numbers.
+  const REFERENCE_DIR = resolve(__dirname, '../../../docs/reference');
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((f) => {
+      const p = join(dir, f);
+      return statSync(p).isDirectory() ? walk(p) : p.toLowerCase().endsWith('.dgm') ? [p] : [];
+    });
+  const corpus = [
+    ...walk(DGM_DIR),
+    ...(existsSync(REFERENCE_DIR) ? walk(REFERENCE_DIR) : []),
+  ];
+  for (const path of corpus) {
+    const name = path.slice(path.search(/(dgm|docs)[\\/]/)).replace(/\\/g, '/');
+    it(`computes the same columns, indicators and order as Mplus's level line without it (${name})`, () => {
+      const graph = buildGraph(parseDgm(readFileSync(path, 'utf8')));
+      if (graph.nodes.some((n) => n.level === null)) return; // no complete line to compare with
+      const fromMplus = semColumns(graph);
+      const computed = semColumns(withoutLevels(graph));
+      expect(computed.columns).toEqual(fromMplus.columns);
+      expect(computed.indicators).toEqual(fromMplus.indicators);
+    });
+  }
 
   it('keeps a second-order factor\'s first-order factors structural without levels (BY between latents)', () => {
     const g = withoutLevels(load('syn_sem.dgm'));
