@@ -43,6 +43,7 @@ import {
   type SaveState,
   type SessionStorage,
 } from './state/autosave.js';
+import { claimAutosave } from './state/autosaveLock.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
@@ -77,6 +78,10 @@ let discarding = false;
 let lastSaved: SaveState | null = null;
 /** Set when storage refused a save, so the warning is shown once per diagram. */
 let saveRefused = false;
+/** Set once this tab owns autosave (`state/autosaveLock.ts`); until then it neither saves nor restores. */
+let ownsAutosave = false;
+/** Set when another tab owned autosave as this one opened. */
+let waitedForAutosave = false;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -217,7 +222,7 @@ function saveState(): SaveState | null {
 function saveNow(): void {
   window.clearTimeout(saveTimer);
   const state = saveState();
-  if (!storage || discarding || !current || !state) return;
+  if (!storage || !ownsAutosave || discarding || !current || !state) return;
   if (lastSaved && sameSaveState(lastSaved, state)) return;
   const session = toSession(current.fileName, current.dgmText, state.engine, state.layout, state.slice, new Date());
   if (saveSession(storage, session)) {
@@ -248,7 +253,33 @@ function discardAndReload(): void {
   window.location.reload();
 }
 
-if (saved) void restore(saved);
+/** Show `text` in the notice bar, with the Discard button only for a restored diagram. */
+function showNotice(text: string, discardable: boolean): void {
+  document.querySelector('#notice-text')!.textContent = text;
+  document.querySelector<HTMLButtonElement>('#notice-discard')!.hidden = !discardable;
+  notice.hidden = false;
+}
+
+if (storage) {
+  claimAutosave(
+    navigator.locks,
+    () => {
+      ownsAutosave = true;
+      if (waitedForAutosave) {
+        // The owning tab closed: autosave this tab's diagram from now on.
+        notice.hidden = true;
+        toast('Autosave is now on in this tab.');
+        saveNow();
+      } else if (saved) {
+        void restore(saved);
+      }
+    },
+    () => {
+      waitedForAutosave = true;
+      showNotice('Autosave is on in another tab: changes in this tab are not saved until that tab closes.', false);
+    },
+  );
+}
 
 /**
  * Bring back the autosaved diagram with a notice offering Discard: as it
@@ -277,8 +308,7 @@ async function restore(session: SavedSession): Promise<void> {
     dropzone.classList.add('hidden');
     const when = new Date(session.savedAt).toLocaleString();
     const how = layout ? '' : ' Laid out again: the saved layout no longer fits the model.';
-    document.querySelector('#notice-text')!.textContent = `Restored ${session.fileName} (saved ${when}).${how}`;
-    notice.hidden = false;
+    showNotice(`Restored ${session.fileName} (saved ${when}).${how}`, true);
   } catch (err) {
     console.warn('Autosaved diagram could not be restored; discarding it.', err);
     discardAndReload();
@@ -293,7 +323,8 @@ async function handleFile(file: File): Promise<void> {
       await runLayout(graph);
       current = { fileName: file.name, dgmText: text };
       saveRefused = false;
-      notice.hidden = true;
+      // The restore notice no longer applies; the not-saved warning still does.
+      if (ownsAutosave) notice.hidden = true;
       redraw();
       dropzone.classList.add('hidden');
       toast(`Loaded ${file.name}`);
