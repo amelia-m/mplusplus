@@ -20,16 +20,24 @@ import type { DgmFile, EstimateRow, ModelStmt, ModelTerm } from '../parser/dgm.j
 export type NodeKind = 'latent' | 'observed';
 export type EdgeKind = 'BY' | 'ON' | 'WITH' | 'COVAR';
 
+export interface EdgeEstimate {
+  value: number;
+  se: number;
+}
+
 export interface GraphNode {
   id: string;
   /** Display label (preserves the case from the MODEL block when possible). */
   label: string;
   kind: NodeKind;
-}
-
-export interface EdgeEstimate {
-  value: number;
-  se: number;
+  /** Mplus's level for the variable (`DgmHeader.levels`), or null when unknown. */
+  level: number | null;
+  /**
+   * Residual variance of a dependent variable, or the variance of an
+   * independent one: codes 4 and 14, 5 and 15. Mplus draws both at the same
+   * place. Null when the table has neither.
+   */
+  residual: { unstd: EdgeEstimate | null; stdyx: EdgeEstimate | null } | null;
 }
 
 export interface GraphEdge {
@@ -75,6 +83,9 @@ export function buildGraph(dgm: DgmFile): ModelGraph {
   // groupings header (e.g. predictors that are neither indicators nor
   // latents). Make sure those still appear as nodes if they show up in
   // model statements or the estimate table.
+  const levelOf = new Map<string, number>();
+  dgm.header.levels?.forEach((level, k) => levelOf.set(lower(dgm.header.allVariables[k]), level));
+
   const nodes = new Map<string, GraphNode>();
   const ensureNode = (rawName: string, hint?: NodeKind): GraphNode => {
     const id = lower(rawName);
@@ -85,7 +96,7 @@ export function buildGraph(dgm: DgmFile): ModelGraph {
       : observedSet.has(id)
         ? 'observed'
         : (hint ?? 'observed');
-    const node: GraphNode = { id, label: rawName, kind };
+    const node: GraphNode = { id, label: rawName, kind, level: levelOf.get(id) ?? null, residual: null };
     nodes.set(id, node);
     return node;
   };
@@ -143,6 +154,7 @@ export function buildGraph(dgm: DgmFile): ModelGraph {
 
   // Attach numeric estimates from the post-INPUT_END table.
   attachEstimates(dgm.estimates, edges, upsertEdge);
+  attachResiduals(dgm.estimates, nodes);
 
   return { nodes: Array.from(nodes.values()), edges: Array.from(edges.values()), source: dgm };
 }
@@ -264,5 +276,25 @@ function attachEstimates(
     }
     // Other codes (2/4/5 and 1x/3x variants) describe variances or per-group
     // residuals; they are not directly attached to an edge in this round.
+  }
+}
+
+/** Unstandardized and STDYX codes of residual variances (4) and variances (5). */
+const RESIDUAL_UNSTD: ReadonlySet<number> = new Set([4, 5]);
+const RESIDUAL_STDYX: ReadonlySet<number> = new Set([14, 15]);
+
+/** Mplus writes 999.000 for a parameter it does not estimate. */
+const NOT_ESTIMATED = 999;
+
+function attachResiduals(rows: EstimateRow[], nodes: Map<string, GraphNode>): void {
+  for (const row of rows) {
+    if (row.to != null || row.value == null || row.se == null) continue;
+    if (row.value === NOT_ESTIMATED) continue;
+    const unstd = RESIDUAL_UNSTD.has(row.code);
+    if (!unstd && !RESIDUAL_STDYX.has(row.code)) continue;
+    const node = nodes.get(lower(row.from));
+    if (!node) continue;
+    node.residual ??= { unstd: null, stdyx: null };
+    node.residual[unstd ? 'unstd' : 'stdyx'] = { value: row.value, se: row.se };
   }
 }

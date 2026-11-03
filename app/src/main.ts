@@ -8,16 +8,19 @@
  */
 import { loadDgmFile, loadOutFile, classifyFile } from './io/load.js';
 import { elkEngine } from './layout/elk.js';
-import { registerLayoutEngine, getLayoutEngine } from './layout/index.js';
+import { semEngine } from './layout/sem.js';
+import { registerLayoutEngine, getLayoutEngine, DEFAULT_LAYOUT_ENGINE } from './layout/index.js';
 import {
   setupSvg,
   renderCaption,
   renderGraph,
+  nodeShapeLookup,
   NODE_DIMENSIONS,
   type RenderState,
   type GroupSelection,
 } from './render/svg.js';
 import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
+import { overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
 import { wireSelection } from './render/selection.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
@@ -35,7 +38,11 @@ import type { ModelGraph } from './model/graph.js';
 import type { LayoutResult, NodeLayout } from './layout/index.js';
 import type { Selection } from 'd3-selection';
 
+registerLayoutEngine(semEngine);
 registerLayoutEngine(elkEngine);
+
+/** Engine for the next layout; the toolbar's picker changes it. */
+let engineName = DEFAULT_LAYOUT_ENGINE;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -70,17 +77,30 @@ const toastHost = document.querySelector<HTMLDivElement>('#toast')!;
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
 
+function relayout(): void {
+  const graph = useStore.getState().graph;
+  if (!graph) return;
+  runLayout(graph)
+    .then(redraw)
+    .catch((err: unknown) => {
+      console.error(err);
+      toast(`Layout failed: ${err instanceof Error ? err.message : String(err)}`, true);
+    });
+}
+
 mountToolbar(toolbarHost, {
   onRedraw: redraw,
-  onRelayout: () => {
-    const graph = useStore.getState().graph;
-    if (!graph) return;
-    runLayout(graph)
-      .then(redraw)
-      .catch((err: unknown) => {
-        console.error(err);
-        toast(`Layout failed: ${err instanceof Error ? err.message : String(err)}`, true);
-      });
+  onRelayout: relayout,
+  engines: [
+    { name: semEngine.name, label: 'SEM' },
+    { name: elkEngine.name, label: 'ELK' },
+  ],
+  engine: engineName,
+  // Switching engines lays the model out again, so like Re-run layout it
+  // drops styles and undo history (open item in TODO.md).
+  onEngineChange: (name) => {
+    engineName = name;
+    relayout();
   },
 });
 
@@ -135,7 +155,7 @@ window.addEventListener('keydown', (e) => {
 
 // The viewBox is frozen while a gesture is active (see `fitViewBox`), so
 // refit once it ends.
-onGestureEnd(fitViewBox);
+onGestureEnd(() => fitViewBox());
 
 async function handleFile(file: File): Promise<void> {
   const kind = classifyFile(file);
@@ -182,8 +202,8 @@ function toast(msg: string, error = false): void {
 }
 
 async function runLayout(graph: ModelGraph): Promise<void> {
-  const engine = getLayoutEngine('elk-layered');
-  if (!engine) throw new Error('Layout engine missing');
+  const engine = getLayoutEngine(engineName);
+  if (!engine) throw new Error(`Layout engine missing: ${engineName}`);
   const result = await engine.layout(graph, {
     width: 1200,
     height: 800,
@@ -216,9 +236,9 @@ function redraw(): void {
     nodeSelection: s.selection,
     edgeSelection: s.edgeSelection,
   };
-  renderGraph(edgesG, nodesG, defsG as Selection<SVGDefsElement, unknown, null, undefined>, state);
+  const overlay = renderGraph(edgesG, nodesG, defsG as Selection<SVGDefsElement, unknown, null, undefined>, state);
   wireNodeDrag(nodesG as GroupSelection, redraw);
-  fitViewBox();
+  fitViewBox(overlay);
 }
 
 /**
@@ -226,13 +246,19 @@ function redraw(): void {
  * plus padding. It is left alone while a gesture is active: changing the
  * viewBox mid-drag would change the pointer-to-diagram mapping under the
  * pointer, so the dragged node would drift from the grab point. `onGestureEnd` refits afterwards.
+ * `overlay` is the residual and curve geometry just drawn, when the caller
+ * has it; otherwise it is worked out here.
  */
-function fitViewBox(): void {
+function fitViewBox(overlay?: OverlayGeometry): void {
   if (isGestureActive()) return;
   const s = useStore.getState();
   const merged = s.layout ? mergeLayout(s.layout, s.positions) : null;
   const boxes = merged?.nodes ?? [];
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
+  if (merged && s.graph) {
+    const shapeOf = nodeShapeLookup(s.graph, s.nodeStyles);
+    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf)));
+  }
   const content = contentViewBox(boxes, { points });
   const captions = s.graph ? modelCaptions(s.graph.source) : [];
   const placed = placeCaption(content, captions.length);

@@ -7,7 +7,7 @@
  * changes.
  */
 import { select, type Selection } from 'd3-selection';
-import type { ModelGraph, GraphEdge, GraphNode } from '../model/graph.js';
+import { isSymmetricKind, type ModelGraph, type GraphEdge, type GraphNode } from '../model/graph.js';
 import type { LayoutResult, NodeLayout, Point } from '../layout/index.js';
 import {
   effectiveEdgeStyle,
@@ -24,6 +24,7 @@ import {
 } from './styles.js';
 import { isSignificant, type SignificanceSource } from '../model/significance.js';
 import { boundaryPoint } from './geometry.js';
+import { overlayGeometry, type CurveGeometry, type OverlayGeometry } from './residual.js';
 import type { CaptionPlacement } from '../ui/viewBox.js';
 
 const NODE_W = 120;
@@ -101,17 +102,22 @@ export function renderCaption(
  * Per-color arrowhead markers are minted on demand into `defs`. `id` is
  * stable per (kind, color) so the same marker is reused across re-renders.
  */
-function arrowMarkerId(kind: 'default' | 'open', color: string): string {
+function arrowMarkerId(kind: 'default' | 'open', color: string, atStart: boolean): string {
   const slug = color.replace(/[^a-zA-Z0-9]/g, '');
-  return `mk-${kind}-${slug}`;
+  return `mk-${kind}-${slug}${atStart ? '-start' : ''}`;
 }
 
+/**
+ * The marker for an arrowhead of `kind` and `color`. `atStart` gives the
+ * one for a path's start, pointing backwards, for two-headed covariances.
+ */
 function ensureArrowMarker(
   defs: Selection<SVGDefsElement, unknown, null, undefined>,
   kind: 'default' | 'open',
   color: string,
+  atStart = false,
 ): string {
-  const id = arrowMarkerId(kind, color);
+  const id = arrowMarkerId(kind, color, atStart);
   if (!defs.select(`#${id}`).empty()) return id;
   const m = defs
     .append('marker')
@@ -121,7 +127,7 @@ function ensureArrowMarker(
     .attr('refY', 0)
     .attr('markerWidth', 9)
     .attr('markerHeight', 9)
-    .attr('orient', 'auto')
+    .attr('orient', atStart ? 'auto-start-reverse' : 'auto')
     .attr('markerUnits', 'userSpaceOnUse');
   if (kind === 'default') {
     m.append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', color);
@@ -136,12 +142,74 @@ export function renderGraph(
   nodesG: GroupSelection,
   defsG: Selection<SVGDefsElement, unknown, null, undefined>,
   state: RenderState,
-): void {
+): OverlayGeometry {
   const nodeIndex = new Map<string, NodeLayout>();
   for (const n of state.layout.nodes) nodeIndex.set(n.id, n);
 
-  renderEdges(edgesG, defsG, state, nodeIndex);
+  const shapeOf = nodeShapeLookup(state.graph, state.nodeStyles);
+  const overlay = overlayGeometry(state.layout, state.graph.edges, shapeOf, ARROW_GAP);
+  renderEdges(edgesG, defsG, state, nodeIndex, shapeOf, overlay);
+  renderResiduals(edgesG, defsG, state, overlay);
   renderNodes(nodesG, state);
+  // Returned so the view fit uses the same geometry without recomputing it.
+  return overlay;
+}
+
+/** Each node's outline, its style override applied; `rect` for an unknown id. */
+export function nodeShapeLookup(
+  graph: ModelGraph,
+  nodeStyles: Record<string, NodeStyleOverride>,
+): (id: string) => NodeShape {
+  const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
+  return (id) => {
+    const n = nodes.get(id);
+    return n ? nodeShape(n, effectiveNodeStyle(n, nodeStyles[id])) : 'rect';
+  };
+}
+
+/**
+ * Residual arrows with their values, in their own group inside the edge
+ * layer. Values follow the coefficient mode, falling back to the other
+ * estimate, and hide with the coefficients.
+ */
+function renderResiduals(
+  edgesG: GroupSelection,
+  defsG: Selection<SVGDefsElement, unknown, null, undefined>,
+  state: RenderState,
+  overlay: OverlayGeometry,
+): void {
+  const layer = edgesG.selectAll<SVGGElement, null>('g.residuals').data([null]).join('g').attr('class', 'residuals');
+  const color = '#111111';
+  const marker = `url(#${ensureArrowMarker(defsG, 'default', color)})`;
+  const nodes = new Map(state.graph.nodes.map((n) => [n.id, n]));
+  const data = Array.from(overlay.residuals, ([id, geom]) => ({ id, geom }));
+  const g = layer
+    .selectAll<SVGGElement, (typeof data)[number]>('g.residual')
+    .data(data, (d) => d.id)
+    .join((enter) => {
+      const e = enter.append('g').attr('class', 'residual');
+      e.append('path').attr('fill', 'none');
+      e.append('text').attr('class', 'residual-label');
+      return e;
+    });
+  g.select('path')
+    .attr('d', (d) => `M ${d.geom.tail.x} ${d.geom.tail.y} L ${d.geom.tip.x} ${d.geom.tip.y}`)
+    .attr('stroke', color)
+    .attr('stroke-width', 1)
+    .attr('marker-end', marker);
+  g.select<SVGTextElement>('text')
+    .attr('x', (d) => d.geom.labelAnchor.x)
+    .attr('y', (d) => d.geom.labelAnchor.y + 4)
+    .attr('text-anchor', (d) => d.geom.textAnchor)
+    .attr('font-family', 'system-ui, sans-serif')
+    .attr('font-size', 12)
+    .attr('fill', color)
+    .attr('display', state.global.showCoefficients ? null : 'none')
+    .text((d) => {
+      const r = nodes.get(d.id)?.residual;
+      const est = state.global.coefMode === 'stdyx' ? (r?.stdyx ?? r?.unstd) : (r?.unstd ?? r?.stdyx);
+      return est ? est.value.toFixed(state.global.decimals) : '';
+    });
 }
 
 function renderNodes(nodesG: GroupSelection, state: RenderState): void {
@@ -254,6 +322,8 @@ interface EdgeGeom {
   sourceShape: NodeShape;
   targetShape: NodeShape;
   bend: Point[];
+  /** Set when the layout draws this edge as a covariance curve. */
+  curve: CurveGeometry | null;
 }
 
 function renderEdges(
@@ -261,13 +331,10 @@ function renderEdges(
   defsG: Selection<SVGDefsElement, unknown, null, undefined>,
   state: RenderState,
   index: Map<string, NodeLayout>,
+  shapeOf: (id: string) => NodeShape,
+  overlay: OverlayGeometry,
 ): void {
   const layoutEdges = new Map(state.layout.edges.map((e) => [e.id, e]));
-  const graphNodes = new Map(state.graph.nodes.map((n) => [n.id, n]));
-  const shapeOf = (id: string): NodeShape => {
-    const n = graphNodes.get(id);
-    return n ? nodeShape(n, effectiveNodeStyle(n, state.nodeStyles[id])) : 'rect';
-  };
   const geoms: EdgeGeom[] = [];
   for (const edge of state.graph.edges) {
     const source = index.get(edge.from);
@@ -281,6 +348,7 @@ function renderEdges(
       sourceShape: shapeOf(edge.from),
       targetShape: shapeOf(edge.to),
       bend: lay?.bend ?? [],
+      curve: overlay.curves.get(edge.id) ?? null,
     });
   }
 
@@ -311,26 +379,27 @@ function renderEdges(
     const label = sel.select<SVGTextElement>('text.edge-label');
     const constraint = sel.select<SVGTextElement>('text.edge-constraint');
 
-    const { d: pathD, mid } = computePath(d);
+    const { d: pathD, mid } = d.curve ?? computePath(d);
     const sigInputs = computeSignificanceInputs(d.edge, state);
     const style = effectiveEdgeStyle(state.global, sigInputs, state.edgeStyles[d.edge.id]);
-    const isWith = d.edge.kind === 'WITH' || d.edge.kind === 'COVAR';
-
-    const dash = strokeDashArray(style.strokeStyle, style.strokeWidth);
-    // WITH/COVAR edges still get a dashed look on top of any user choice.
-    const finalDash = isWith && style.strokeStyle === 'solid' ? '4 3' : dash;
+    // Covariances are two-headed and drawn in their own style, solid by
+    // default (docs/diagram-conventions.md D3).
+    const twoHeaded = isSymmetricKind(d.edge.kind);
 
     let marker: string | null = null;
-    if (!isWith && style.arrowhead !== 'none') {
-      const id = ensureArrowMarker(defsG, style.arrowhead === 'open' ? 'open' : 'default', style.stroke);
-      marker = `url(#${id})`;
+    let startMarker: string | null = null;
+    if (style.arrowhead !== 'none') {
+      const kind = style.arrowhead === 'open' ? 'open' : 'default';
+      marker = `url(#${ensureArrowMarker(defsG, kind, style.stroke)})`;
+      if (twoHeaded) startMarker = `url(#${ensureArrowMarker(defsG, kind, style.stroke, true)})`;
     }
 
     path
       .attr('d', pathD)
       .attr('stroke', style.stroke)
       .attr('stroke-width', style.strokeWidth)
-      .attr('stroke-dasharray', finalDash)
+      .attr('stroke-dasharray', strokeDashArray(style.strokeStyle, style.strokeWidth))
+      .attr('marker-start', startMarker)
       .attr('marker-end', marker);
     hit.attr('d', pathD);
 
@@ -403,7 +472,9 @@ function computePath(g: EdgeGeom): { d: string; mid: Point } {
   const startAnchor = g.bend[0] ?? tCenter;
   const endAnchor = g.bend[g.bend.length - 1] ?? sCenter;
 
-  const start = boundaryPoint(g.source, g.sourceShape, startAnchor);
+  // A two-headed covariance needs the same gap at its start as at its end.
+  const startGap = isSymmetricKind(g.edge.kind) ? ARROW_GAP : 0;
+  const start = boundaryPoint(g.source, g.sourceShape, startAnchor, startGap);
   const end = boundaryPoint(g.target, g.targetShape, endAnchor, ARROW_GAP);
 
   const c1Source = g.bend[0] ?? end;

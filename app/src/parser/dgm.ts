@@ -69,6 +69,14 @@ export interface DgmHeader {
   allVariables: string[];
   /** Latents with the observed indicators they load on, in file order. */
   groupings: { latent: string; observed: string[] }[];
+  /**
+   * Mplus's level per variable, aligned with `allVariables`: -1 for an
+   * indicator, otherwise the column Mplus's Diagrammer draws it in, left to
+   * right. Not documented by Mplus; read from 49 `.dgm` files and 11
+   * diagrams (docs/diagram-conventions.md D6). `null` when the header lacks
+   * the line.
+   */
+  levels: number[] | null;
 }
 
 export interface WeightOption {
@@ -612,6 +620,7 @@ function parseEstimateSection(text: string): ParsedSection {
   // Without a groupings count the rest of the header cannot be told apart
   // from estimate rows, so nothing more is read.
   const groupCount = found?.count ?? null;
+  const levels = found?.levels ?? null;
   i = found?.next ?? lines.length;
 
   const groupings: DgmHeader['groupings'] = [];
@@ -631,21 +640,25 @@ function parseEstimateSection(text: string): ParsedSection {
     if (row) estimates.push(row);
   }
 
-  return { header: { allVariables, groupings }, estimates };
+  return { header: { allVariables, groupings, levels }, estimates };
 }
 
-/** Where the groupings count is: its value and the index of the line after it. */
+/**
+ * Where the groupings count is: its value, the index of the line after it,
+ * and the level line when the layout around it was recognised.
+ */
 interface GroupingsCount {
   count: number;
   next: number;
+  levels: number[] | null;
 }
 
 /**
  * Read the groupings count from the fixed header layout that follows the
  * variable list:
  *
- *     <int>                one line
- *     <code code ...>      one integer type code per variable
+ *     <int>                one line: the number of levels
+ *     <code code ...>      one integer per variable: its level, -1 for an indicator
  *     0                    single-integer lines; the last one is
  *     <N>                  the number of latent groupings (0 with no latents)
  *     <latent> / <obs1 obs2 ...>   N pairs, then the estimate rows
@@ -671,7 +684,7 @@ function readGroupingsCount(
   if (count == null) return null;
   // A latent name must follow a non-zero count.
   if (count > 0 && !/^[A-Za-z_]/.test(lines[i] ?? '')) return null;
-  return { count, next: i };
+  return { count, next: i, levels: codes.map(Number) };
 }
 
 /**
@@ -686,7 +699,7 @@ function scanForGroupingsCount(lines: string[], start: number): GroupingsCount |
       /^[A-Za-z_]/.test(lines[i + 1]) &&
       looksLikeVariableList(lines[i + 2])
     ) {
-      return { count: Number(lines[i]), next: i + 1 };
+      return { count: Number(lines[i]), next: i + 1, levels: null };
     }
   }
   return null;

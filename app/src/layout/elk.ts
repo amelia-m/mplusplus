@@ -1,5 +1,5 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { ModelGraph } from '../model/graph.js';
+import { isSymmetricKind, type EdgeKind, type ModelGraph } from '../model/graph.js';
 import type {
   EdgeLayout,
   LayoutEngine,
@@ -51,13 +51,20 @@ export const elkEngine: LayoutEngine = {
       height: c.height ?? nodeHeight,
     }));
 
+    const kinds = new Map<string, EdgeKind>(graph.edges.map((e) => [e.id, e.kind]));
     const edges: EdgeLayout[] = (result.edges ?? []).map((e) => {
-      // ELK's edge sections give us start/end + intermediate bend points.
-      // We only retain the bends - the endpoints are recomputed at the
-      // node boundary by the renderer.
+      // Paths are straight lines, as in SEM diagrams and Mplus's Diagrammer,
+      // so a BY or ON edge keeps no bends. Otherwise ELK's edge sections give
+      // us start/end + intermediate bend points. We only retain the bends -
+      // the endpoints are recomputed at the node boundary by the renderer.
+      const id = e.id ?? '';
+      const kind = kinds.get(id);
+      const routed = kind !== undefined && isSymmetricKind(kind);
       const section = e.sections?.[0];
-      const bend: Point[] = section?.bendPoints?.map((p) => ({ x: p.x, y: p.y })) ?? [];
-      return { id: e.id ?? '', bend };
+      const bend: Point[] = routed
+        ? (section?.bendPoints?.map((p) => ({ x: p.x, y: p.y })) ?? [])
+        : [];
+      return { id, bend };
     });
 
     return {

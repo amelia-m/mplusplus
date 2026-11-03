@@ -43,8 +43,36 @@ describe('parseDgm - corpus smoke tests', () => {
       for (const e of dgm.estimates) {
         expect(allowed.has(e.code)).toBe(true);
       }
+
+      // Mplus's level line: one integer per variable, -1 exactly for the
+      // indicators named in the groupings (docs/diagram-conventions.md D6).
+      const levels = dgm.header.levels;
+      expect(levels).not.toBeNull();
+      expect(levels!.length).toBe(dgm.header.allVariables.length);
+      const indicators = new Set(dgm.header.groupings.flatMap((g) => g.observed));
+      dgm.header.allVariables.forEach((v, k) => {
+        expect(levels![k] === -1, v).toBe(indicators.has(v));
+      });
     });
   }
+});
+
+describe('parseDgm - Mplus level line (column per variable, -1 for indicators)', () => {
+  it('reads the level of each variable of syn_sem.dgm', () => {
+    const { header } = parseDgm(readFileSync(join(DGM_DIR, 'syn_sem.dgm'), 'utf8'));
+    const level = (v: string) => header.levels![header.allVariables.indexOf(v)];
+    expect([level('a1'), level('z1'), level('fa'), level('fb'), level('fc'), level('x1')]).toEqual(
+      [-1, 0, 1, 2, 3, 4],
+    );
+  });
+
+  it('gives null, without throwing, when the header lacks the level line', () => {
+    const text = readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8').replace(
+      /^1 2 2 0 0 0$/m,
+      'not a level line',
+    );
+    expect(parseDgm(text).header.levels).toBeNull();
+  });
 });
 
 // syn_sem.dgm: synthetic fixture (invented model and names, data simulated
