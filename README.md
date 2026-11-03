@@ -61,4 +61,4 @@ Emits the production bundle to `app/dist/`. The output uses relative asset paths
 
 ## AI assistance
 
-Most of the code, tests and documentation in this repository were written with Claude Code, Anthropic's AI coding assistant (model Claude Opus 5.5), under the direction of Amelia Miramonti, who sets the requirements, makes the design decisions and decides and merges every change. Its commits carry a `Co-Authored-By:` line naming the model (one merge commit, a6074ce, lacks it), and the pull requests it wrote end with a "Generated with Claude Code" footer. The app shows the same note at the bottom of its page.
+Designed by Amelia Miramonti and implemented with Claude Code (Anthropic).
