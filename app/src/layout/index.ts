@@ -1,7 +1,7 @@
 /**
  * Layout types (`LayoutResult`, `NodeLayout`, `EdgeLayout`) and the layout
- * engine registry. `main.ts` registers the ELK engine (`elk.ts`) and looks
- * it up by name. A layout result is only the initial placement; after
+ * engine registry. `main.ts` registers the engines and looks the chosen
+ * one up by name. A layout result is only the initial placement; after
  * loading, the store's `positions` are authoritative.
  */
 import type { ModelGraph } from '../model/graph.js';
@@ -65,9 +65,12 @@ export interface LayoutEngine {
   layout(graph: ModelGraph, opts: LayoutOpts): Promise<LayoutResult>;
 }
 
+/** Engine a loaded model is laid out with (docs/diagram-conventions.md D9). */
+export const DEFAULT_LAYOUT_ENGINE = 'sem';
+
 /**
- * Registry of available layout engines. Only the ELK adapter (`elk-layered`)
- * ships today; further engines register here through `registerLayoutEngine`.
+ * Registry of available layout engines: `sem` (`sem.ts`) and the ELK
+ * adapter (`elk-layered`, `elk.ts`), both registered by `main.ts`.
  */
 const registry = new Map<string, LayoutEngine>();
 

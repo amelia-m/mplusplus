@@ -8,7 +8,8 @@
  */
 import { loadDgmFile, loadOutFile, classifyFile } from './io/load.js';
 import { elkEngine } from './layout/elk.js';
-import { registerLayoutEngine, getLayoutEngine } from './layout/index.js';
+import { semEngine } from './layout/sem.js';
+import { registerLayoutEngine, getLayoutEngine, DEFAULT_LAYOUT_ENGINE } from './layout/index.js';
 import {
   setupSvg,
   renderCaption,
@@ -37,7 +38,11 @@ import type { ModelGraph } from './model/graph.js';
 import type { LayoutResult, NodeLayout } from './layout/index.js';
 import type { Selection } from 'd3-selection';
 
+registerLayoutEngine(semEngine);
 registerLayoutEngine(elkEngine);
+
+/** Engine for the next layout; the toolbar's picker changes it. */
+let engineName = DEFAULT_LAYOUT_ENGINE;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -72,17 +77,30 @@ const toastHost = document.querySelector<HTMLDivElement>('#toast')!;
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
 
+function relayout(): void {
+  const graph = useStore.getState().graph;
+  if (!graph) return;
+  runLayout(graph)
+    .then(redraw)
+    .catch((err: unknown) => {
+      console.error(err);
+      toast(`Layout failed: ${err instanceof Error ? err.message : String(err)}`, true);
+    });
+}
+
 mountToolbar(toolbarHost, {
   onRedraw: redraw,
-  onRelayout: () => {
-    const graph = useStore.getState().graph;
-    if (!graph) return;
-    runLayout(graph)
-      .then(redraw)
-      .catch((err: unknown) => {
-        console.error(err);
-        toast(`Layout failed: ${err instanceof Error ? err.message : String(err)}`, true);
-      });
+  onRelayout: relayout,
+  engines: [
+    { name: semEngine.name, label: 'SEM' },
+    { name: elkEngine.name, label: 'ELK' },
+  ],
+  engine: engineName,
+  // Switching engines lays the model out again, so like Re-run layout it
+  // drops styles and undo history (open item in TODO.md).
+  onEngineChange: (name) => {
+    engineName = name;
+    relayout();
   },
 });
 
@@ -184,8 +202,8 @@ function toast(msg: string, error = false): void {
 }
 
 async function runLayout(graph: ModelGraph): Promise<void> {
-  const engine = getLayoutEngine('elk-layered');
-  if (!engine) throw new Error('Layout engine missing');
+  const engine = getLayoutEngine(engineName);
+  if (!engine) throw new Error(`Layout engine missing: ${engineName}`);
   const result = await engine.layout(graph, {
     width: 1200,
     height: 800,
