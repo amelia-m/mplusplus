@@ -17,15 +17,36 @@ export interface NodeLayout extends Point {
   height: number;
 }
 
+/** A side of a node, or the side a curve bulges towards. */
+export type Side = 'left' | 'right' | 'top' | 'bottom';
+
+/**
+ * A node's residual, drawn on `side`. Only the side is stored: the
+ * renderer works out the geometry from the node's current position, so the
+ * residual follows a dragged node.
+ */
+export interface ResidualLayout {
+  id: string;
+  side: Side;
+}
+
 export interface EdgeLayout {
   id: string;
   /** Optional bend points between source and target (excludes endpoints). */
   bend?: Point[];
+  /**
+   * Draw a symmetric edge as a curve bulging towards `side`, between the
+   * nodes or between their residuals (docs/diagram-conventions.md D5, D8).
+   * Like residuals, it holds no coordinates.
+   */
+  curve?: { side: Side; attach: 'node' | 'residual' };
 }
 
 export interface LayoutResult {
   nodes: NodeLayout[];
   edges: EdgeLayout[];
+  /** Residuals to draw; an engine that places none leaves this out. */
+  residuals?: ResidualLayout[];
   /** Bounding box of the laid-out graph. */
   width: number;
   height: number;
