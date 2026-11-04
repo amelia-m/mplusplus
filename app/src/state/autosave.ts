@@ -163,9 +163,13 @@ export function listSlots(storage: SessionStorage): StoredSlot[] {
 
 export interface RestoredSession {
   graph: ModelGraph;
-  /** The saved layout, or null when it no longer fits the graph and the model must be laid out again. */
+  /**
+   * The saved layout, or null when the model must be laid out again: the
+   * layout no longer fits the graph, or it was made by another engine.
+   */
   layout: LayoutResult | null;
-  slice: HistorySlice;
+  /** The saved slice; without positions when the layout is redone, so the new layout's boxes stand. */
+  slice: Partial<HistorySlice>;
 }
 
 const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v);
@@ -196,17 +200,22 @@ export function layoutFitsGraph(layout: LayoutResult, graph: ModelGraph): boolea
 
 /**
  * Rebuild the graph from the saved text, with the saved slice and, when it
- * still fits the graph, the saved layout. Global style fields added since
- * the save take their defaults. Throws when the text no longer parses.
+ * still fits the graph and was made by `engine` (the one the app lays out
+ * with now), the saved layout. Otherwise the model is laid out again, and
+ * the saved positions, which belong to the old layout, are left out (a
+ * diagram saved with the ELK engine, dropped 2026-11-03, would otherwise
+ * keep ELK's boxes). Global style fields added since the save take their
+ * defaults. Throws when the text no longer parses.
  */
-export function restoreSession(session: SavedSession): RestoredSession {
+export function restoreSession(session: SavedSession, engine: string): RestoredSession {
   const graph = buildGraph(parseDgm(session.dgmText));
   const s = session.slice;
+  const reuse = session.engine === engine && layoutFitsGraph(session.layout, graph);
   return {
     graph,
-    layout: layoutFitsGraph(session.layout, graph) ? session.layout : null,
+    layout: reuse ? session.layout : null,
     slice: {
-      positions: s.positions ?? {},
+      ...(reuse ? { positions: s.positions ?? {} } : {}),
       edgeStyles: s.edgeStyles ?? {},
       nodeStyles: s.nodeStyles ?? {},
       global: { ...DEFAULT_GLOBAL_STYLE, ...(s.global ?? {}) },

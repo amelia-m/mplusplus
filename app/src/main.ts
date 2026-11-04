@@ -299,9 +299,7 @@ function showNotice(text: string, kind: 'restored' | 'offer' | 'opened'): void {
  */
 async function restore(session: SavedSession, source: 'own' | 'offered'): Promise<void> {
   try {
-    const restored = restoreSession(session);
-    const { graph, slice } = restored;
-    const layout = session.engine === engineName ? restored.layout : null;
+    const { graph, layout, slice } = restoreSession(session, engineName);
     const placed = layout ?? (await computeLayout(graph));
     // A file the user loaded while this was laid out wins.
     if (fileLoaded) return;
@@ -403,7 +401,7 @@ function computeLayout(graph: ModelGraph): Promise<LayoutResult> {
  * restored diagram's positions and styles) when given, and start a fresh
  * undo history.
  */
-function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: HistorySlice): void {
+function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<HistorySlice>): void {
   // A node drag still in progress would keep writing positions (stale ones,
   // one undo entry per move) into the new layout, and a gesture still open
   // would push a snapshot of the old diagram when it ends. Cancel the drag,
