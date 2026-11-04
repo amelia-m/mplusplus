@@ -7,7 +7,6 @@
  * resets the undo history; a `.out` attaches p-values to the loaded graph.
  */
 import { loadDgmFile, loadOutFile, classifyFile } from './io/load.js';
-import { elkEngine } from './layout/elk.js';
 import { semEngine } from './layout/sem.js';
 import { registerLayoutEngine, getLayoutEngine, DEFAULT_LAYOUT_ENGINE } from './layout/index.js';
 import {
@@ -31,7 +30,10 @@ import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions } from './model/caption.js';
-import { useStore } from './state/store.js';
+import { historySlice, useStore, type HistorySlice } from './state/store.js';
+import { restoredPositions, restoreSession, type SavedSession, type SaveState, type SessionStorage } from './state/autosave.js';
+import { AutosaveController } from './state/autosaveController.js';
+import type { TabChannel } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
@@ -39,10 +41,61 @@ import type { LayoutResult, NodeLayout } from './layout/index.js';
 import type { Selection } from 'd3-selection';
 
 registerLayoutEngine(semEngine);
-registerLayoutEngine(elkEngine);
 
-/** Engine for the next layout; the toolbar's picker changes it. */
-let engineName = DEFAULT_LAYOUT_ENGINE;
+/**
+ * The browser's storage for autosave, or null where it is unavailable
+ * (disabled, or blocked for a page opened from `file://`).
+ */
+const storage: SessionStorage | null = (() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+/** This tab's `sessionStorage`, which keeps its autosave id across reloads, or null. */
+const tabStore: Storage | null = (() => {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+})();
+/** A `BroadcastChannel` to this origin's other tabs, or undefined where the browser lacks it. */
+function tabChannel(): TabChannel | undefined {
+  if (typeof BroadcastChannel === 'undefined') return undefined;
+  const channel = new BroadcastChannel('mplusplus.tabs');
+  return {
+    post: (m) => channel.postMessage(m),
+    listen: (handler) => channel.addEventListener('message', (e) => handler(e.data)),
+  };
+}
+/** Autosave (`state/autosaveController.ts`), or null where browser storage is unavailable. */
+const autosave = storage
+  ? new AutosaveController({
+      storage,
+      locks: navigator.locks,
+      tabStore,
+      channel: tabChannel(),
+      newId: () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2),
+      now: () => new Date(),
+    })
+  : null;
+
+/**
+ * Engine for every layout. Only `sem` ships (Amelia, 2026-11-03: ELK
+ * dropped), so this is a constant; a restored diagram laid out by another
+ * engine is laid out again (see `restore`).
+ */
+const engineName = DEFAULT_LAYOUT_ENGINE;
+/** The loaded `.dgm`, kept so autosave can store its text. */
+let current: { fileName: string; dgmText: string } | null = null;
+/** Set by Discard, so no save lands between clearing the slot and the reload. */
+let discarding = false;
+/** Set when storage refused a save, so the warning is shown once per diagram. */
+let saveRefused = false;
+/** Set once the user's own `.dgm` is installed, which then wins over a restore still in progress. */
+let fileLoaded = false;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -58,12 +111,21 @@ app.innerHTML = `
     <input type="file" id="filepicker" accept=".dgm,.out" />
   </div>
   <div id="toast"></div>
+  <div id="notice" class="notice" hidden>
+    <span id="notice-text"></span>
+    <button type="button" id="notice-open" class="btn" hidden>Open</button>
+    <button type="button" id="notice-discard" class="btn">Discard</button>
+    <button type="button" id="notice-close" class="btn" title="Hide this notice">Hide</button>
+  </div>
   <main class="main-area">
     <div class="canvas-wrap">
       <svg id="canvas" width="1200" height="800"></svg>
     </div>
     <aside id="inspector"></aside>
   </main>
+  <footer class="app-credit">
+    Designed by Amelia Miramonti and implemented with Claude Code (Anthropic).
+  </footer>
 `;
 
 const dropzone = document.querySelector<HTMLDivElement>('#dropzone')!;
@@ -73,10 +135,12 @@ const toolbarHost = document.querySelector<HTMLDivElement>('#toolbar')!;
 const globalHost = document.querySelector<HTMLDivElement>('#global-panel')!;
 const inspectorHost = document.querySelector<HTMLElement>('#inspector')!;
 const toastHost = document.querySelector<HTMLDivElement>('#toast')!;
+const notice = document.querySelector<HTMLDivElement>('#notice')!;
 
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
 fitViewBox();
 
+/** Lay the loaded model out again (Re-run layout). */
 function relayout(): void {
   const graph = useStore.getState().graph;
   if (!graph) return;
@@ -88,21 +152,7 @@ function relayout(): void {
     });
 }
 
-mountToolbar(toolbarHost, {
-  onRedraw: redraw,
-  onRelayout: relayout,
-  engines: [
-    { name: semEngine.name, label: 'SEM' },
-    { name: elkEngine.name, label: 'ELK' },
-  ],
-  engine: engineName,
-  // Switching engines lays the model out again, so like Re-run layout it
-  // drops styles and undo history (open item in TODO.md).
-  onEngineChange: (name) => {
-    engineName = name;
-    relayout();
-  },
-});
+mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout });
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);
@@ -157,12 +207,163 @@ window.addEventListener('keydown', (e) => {
 // refit once it ends.
 onGestureEnd(() => fitViewBox());
 
+// Autosave: every store change schedules a save of the open diagram, so a
+// burst of changes (a drag) writes once.
+const AUTOSAVE_DELAY_MS = 400;
+let saveTimer: number | undefined;
+
+/** The state a save would write now, or null when there is no diagram to save. */
+function saveState(): SaveState | null {
+  const s = useStore.getState();
+  if (!current || !s.graph || !s.layout) return null;
+  return { file: current, engine: engineName, layout: s.layout, slice: historySlice(s) };
+}
+
+/** Save the open diagram to this tab's slot (`state/autosaveController.ts`). */
+function saveNow(): void {
+  window.clearTimeout(saveTimer);
+  const state = saveState();
+  if (!autosave || discarding || !current || !state) return;
+  const input = { fileName: current.fileName, dgmText: current.dgmText, state };
+  // Storage is full: free closed tabs' slots and try again, once per
+  // diagram, then say so if it still fails. A save that goes through
+  // re-arms the retry for a later refusal.
+  const result = autosave.save(input);
+  if (result === 'saved') saveRefused = false;
+  if (result !== 'refused' || saveRefused) return;
+  void autosave.makeRoomAndSave(input).then((result) => {
+    if (result === 'refused' && !saveRefused) {
+      toast('Autosave is off for this diagram: browser storage refused it.', true);
+      saveRefused = true;
+    }
+  });
+}
+
+useStore.subscribe(() => {
+  if (!autosave) return;
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(saveNow, AUTOSAVE_DELAY_MS);
+});
+// A reload or tab close within the delay would otherwise lose the last change.
+window.addEventListener('pagehide', saveNow);
+
+document.querySelector('#notice-close')!.addEventListener('click', () => (notice.hidden = true));
+document.querySelector('#notice-discard')!.addEventListener('click', discardAndReload);
+
+/** Clear this tab's slot and reload empty. Undo cannot bring the diagram back. */
+function discardAndReload(): void {
+  discarding = true;
+  window.clearTimeout(saveTimer);
+  autosave?.discard();
+  window.location.reload();
+}
+
+/** The closed tab's diagram on offer (the Open button), if any. */
+let offered: SavedSession | null = null;
+
+document.querySelector('#notice-open')!.addEventListener('click', () => {
+  if (offered) void restore(offered, 'offered');
+});
+
+/**
+ * Restore this tab's own diagram after a reload, or offer a closed tab's,
+ * unless the user loaded a file first (that file is then saved).
+ */
+async function startAutosave(controller: AutosaveController): Promise<void> {
+  const { restore: own, offer } = await controller.start();
+  if (fileLoaded) {
+    saveNow();
+  } else if (own) {
+    await restore(own, 'own');
+  } else if (offer) {
+    offered = offer;
+    const when = new Date(offer.savedAt).toLocaleString();
+    showNotice(`A diagram from a closed tab is available: ${offer.fileName} (saved ${when}).`, 'offer');
+  }
+}
+
+if (autosave) void startAutosave(autosave);
+
+/** Show `text` in the notice bar, with Discard for a restored diagram or Open for an offered one. */
+function showNotice(text: string, kind: 'restored' | 'offer' | 'opened'): void {
+  document.querySelector('#notice-text')!.textContent = text;
+  document.querySelector<HTMLButtonElement>('#notice-discard')!.hidden = kind !== 'restored';
+  document.querySelector<HTMLButtonElement>('#notice-open')!.hidden = kind !== 'offer';
+  notice.hidden = false;
+}
+
+/**
+ * Load a saved diagram: this tab's own (after a reload) or one opened from
+ * an offer. It comes back as it was, or laid out again when the saved
+ * layout no longer fits the graph or came from an engine that no longer
+ * ships (ELK, dropped 2026-11-03, whose bend points `sem` never makes). Nothing is
+ * written until the next edit, so an opened offer that is never edited
+ * leaves no copy. If this tab's own diagram fails to restore, its saved
+ * copy is kept and autosave stops for this page, so a half-restored
+ * diagram is never saved over it, with Discard offered; a failed offer
+ * only says so.
+ */
+async function restore(session: SavedSession, source: 'own' | 'offered'): Promise<void> {
+  try {
+    const { graph, layout, slice } = restoreSession(session, engineName);
+    const placed = layout ?? (await computeLayout(graph));
+    // A file the user loaded while this was laid out wins.
+    if (fileLoaded) return;
+    installGraph(graph, placed, slice);
+    redraw();
+    current = { fileName: session.fileName, dgmText: session.dgmText };
+    offered = null;
+    saveRefused = false;
+    autosave?.markSaved(saveState());
+    dropzone.classList.add('hidden');
+    const when = new Date(session.savedAt).toLocaleString();
+    const how = layout ? '' : ' Laid out again: the saved layout could not be used as it was.';
+    if (source === 'own') showNotice(`Restored ${session.fileName} (saved ${when}).${how}`, 'restored');
+    else showNotice(`Opened ${session.fileName} from a closed tab (saved ${when}).${how}`, 'opened');
+  } catch (err) {
+    console.warn('Autosaved diagram could not be restored.', err);
+    // A file the user loaded while this was laid out wins here too: it stays
+    // on screen and is saved to a new slot, so the slot that failed is kept,
+    // as when the file comes after the failure (handleFile).
+    if (fileLoaded) {
+      if (!discarding) {
+        autosave?.stop();
+        await autosave?.startFresh();
+        saveNow();
+      }
+      return;
+    }
+    if (source === 'own') {
+      // Keep the saved copy (a later version may restore it) and stop saving
+      // the half-restored state over it; Discard still removes it.
+      autosave?.stop();
+      showNotice(
+        `Could not restore ${session.fileName}. The saved copy is kept, and autosave is off in this tab until it reloads.`,
+        'restored',
+      );
+    } else {
+      toast(`Could not open ${session.fileName}.`, true);
+    }
+  }
+}
+
 async function handleFile(file: File): Promise<void> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
-      const { graph } = await loadDgmFile(file);
-      await runLayout(graph);
+      const { graph, text } = await loadDgmFile(file);
+      const layout = await computeLayout(graph);
+      // Set in the same step as the install, so a restore still in
+      // progress sees it and gives way; a load that failed never sets it.
+      installGraph(graph, layout);
+      fileLoaded = true;
+      current = { fileName: file.name, dgmText: text };
+      saveRefused = false;
+      offered = null;
+      notice.hidden = true;
+      // After a restore that failed, autosave stopped to keep the broken
+      // slot; a new file gets a new slot, so it is saved and the old one kept.
+      if (autosave?.isStopped && !discarding) await autosave.startFresh();
       redraw();
       dropzone.classList.add('hidden');
       toast(`Loaded ${file.name}`);
@@ -202,14 +403,26 @@ function toast(msg: string, error = false): void {
 }
 
 async function runLayout(graph: ModelGraph): Promise<void> {
+  installGraph(graph, await computeLayout(graph));
+}
+
+function computeLayout(graph: ModelGraph): Promise<LayoutResult> {
   const engine = getLayoutEngine(engineName);
-  if (!engine) throw new Error(`Layout engine missing: ${engineName}`);
-  const result = await engine.layout(graph, {
+  if (!engine) return Promise.reject(new Error(`Layout engine missing: ${engineName}`));
+  return engine.layout(graph, {
     width: 1200,
     height: 800,
     nodeWidth: NODE_DIMENSIONS.width,
     nodeHeight: NODE_DIMENSIONS.height,
   });
+}
+
+/**
+ * Make `graph`, placed by `layout`, the open diagram, with `slice` (a
+ * restored diagram's positions and styles) when given, and start a fresh
+ * undo history.
+ */
+function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<HistorySlice>): void {
   // A node drag still in progress would keep writing positions (stale ones,
   // one undo entry per move) into the new layout, and a gesture still open
   // would push a snapshot of the old diagram when it ends. Cancel the drag,
@@ -217,7 +430,11 @@ async function runLayout(graph: ModelGraph): Promise<void> {
   // it. Both are no-ops when nothing is active.
   cancelNodeDrag();
   endActiveGesture();
-  useStore.getState().loadGraph(graph, result);
+  useStore.getState().loadGraph(graph, layout);
+  if (slice) {
+    const positions = slice.positions && restoredPositions(useStore.getState().positions, slice.positions);
+    useStore.setState(positions ? { ...slice, positions } : slice);
+  }
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
   t.getState().clear();
 }
