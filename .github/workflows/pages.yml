@@ -1,7 +1,9 @@
-# Build the app and publish it to GitHub Pages on every push to main.
-# The tests run first, so a failing main is not published. Pages must be
-# set to deploy from GitHub Actions in the repository settings
-# (Settings > Pages > Build and deployment > Source: GitHub Actions).
+# Build the app and publish it to GitHub Pages on every push to main, or
+# when run by hand (Actions > Deploy to GitHub Pages > Run workflow; the
+# github-pages environment only deploys from main). The tests run first,
+# so a failing main is not published. Pages must be set to deploy from
+# GitHub Actions in the repository settings (Settings > Pages > Build and
+# deployment > Source: GitHub Actions).
 name: Deploy to GitHub Pages
 
 on:
@@ -9,10 +11,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Nothing by default; each job asks for what it needs. The build job,
+# which runs npm install scripts with a restored cache, can only read.
+permissions: {}
 
 # One deployment at a time; a newer push waits rather than cancelling one
 # that is half published.
@@ -23,6 +24,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: app
@@ -36,7 +39,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: app/dist
@@ -44,6 +46,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
