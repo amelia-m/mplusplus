@@ -1,8 +1,14 @@
 # Project profile: mplusplus
 
+Ownership: a personal project, not work for the university. Amelia, 2026-11-03: "it's not. it's work adjacent but a pet project on my own time" (asked whether the university may have a say in the license). The license is hers to choose: LGPL-3.0-or-later (Amelia, 2026-11-03).
+
+Spelling: American English in everything committed here, code comments, docs, UI text, commit messages and pull requests (Amelia, 2026-11-03: "american english", asked "Licence" or "License"). Text written before 2026-11-03 still has British spellings ("licence", "behaviour", "colour", "organise" and so on); they are converted in one spelling-only commit once the open branches merge (open item in `TODO.md`), never mixed with content changes. Quotes keep their original spelling.
+
 ## Attribution
 
-AI attribution in git and pull requests: yes. Amelia, 2026-10-16: "yes" (asked whether commits and PRs should carry AI attribution). The model must always be named (Amelia, 2026-10-16: "make sure model is specified"): commits end with a `Co-Authored-By:` trailer naming the exact model and version (for example `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`); PR descriptions end with the "Generated with Claude Code" footer followed by the exact model and version (for example "Model: Claude Opus 5.5").
+AI attribution in git and pull requests: yes. Amelia, 2026-10-16: "yes" (asked whether commits and PRs should carry AI attribution). The model must always be named (Amelia, 2026-10-16: "make sure model is specified"): commits end with a `Co-Authored-By:` trailer naming the exact model and version (for example `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`); PR descriptions end with the "Generated with Claude Code" footer followed by the exact model and version (for example "Model: Claude Opus 5.5"). Merge commits carry the trailer too (Amelia, 2026-11-03: "y"): a merge an agent makes locally ends with it, and a pull request merged on GitHub gets it by editing the merge message or by squash-merging. Found 2026-11-03: of 69 commits on `main`, the 4 without it were all merges (GitHub's merge commits for #2, #3 and #4, and a local `Merge main into feat/sem-layout`).
+
+Visible disclosure, in Amelia's wording (2026-11-03): the app's page says "Designed by Amelia Miramonti and implemented with Claude Code (Anthropic)."; the README's "AI assistance" section says "Implemented with Claude Code (Anthropic).", since the README's license section already names her ("y", asked whether the README should drop the redundant part). No further detail (Amelia, 2026-11-03: model trailers in the README are "unneccessary detail"). Asked whether a deployed site needs a visible note: "y". This is not a UNL project (Amelia, 2026-11-03), so UNL's disclosure guideline does not govern it; the credit is her choice. Keep the two consistent, and update them if another assistant contributes (none did before the 2026-10-16 history reset: Amelia, 2026-11-03, "no").
 
 ## Review, push and merge
 
