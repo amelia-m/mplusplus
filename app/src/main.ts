@@ -320,9 +320,17 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     else showNotice(`Opened ${session.fileName} from a closed tab (saved ${when}).${how}`, 'opened');
   } catch (err) {
     console.warn('Autosaved diagram could not be restored.', err);
-    // A file the user loaded while this was laid out wins here too: it
-    // stays on screen and keeps autosaving.
-    if (fileLoaded) return;
+    // A file the user loaded while this was laid out wins here too: it stays
+    // on screen and is saved to a new slot, so the slot that failed is kept,
+    // as when the file comes after the failure (handleFile).
+    if (fileLoaded) {
+      if (!discarding) {
+        autosave?.stop();
+        await autosave?.startFresh();
+        saveNow();
+      }
+      return;
+    }
     if (source === 'own') {
       // Keep the saved copy (a later version may restore it) and stop saving
       // the half-restored state over it; Discard still removes it.

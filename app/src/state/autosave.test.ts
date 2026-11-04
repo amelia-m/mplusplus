@@ -84,6 +84,14 @@ describe('autosave', () => {
     expect(r.slice.positions).toEqual(slice.positions); // fa kept; the vanished node and fb's broken box dropped
   });
 
+  it('drops a broken saved box even when the saved layout is reused', () => {
+    const s = session();
+    s.slice = { ...s.slice, positions: { ...s.slice.positions, fb: { x: null as unknown as number, y: 2, width: 3, height: 4 } } };
+    const r = restoreSession(s, 'sem');
+    expect(r.layout).toEqual(layout);
+    expect(r.slice.positions).toEqual(slice.positions);
+  });
+
   it('lays restored positions over the fresh layout, so a node new since the save keeps its fresh box', () => {
     const fresh = { fa: box(0, 0), added: box(5, 5) };
     expect(restoredPositions(fresh, { fa: box(10, 20) })).toEqual({ fa: box(10, 20), added: box(5, 5) });

@@ -231,6 +231,8 @@ export function restoreSession(session: SavedSession, engine: string): RestoredS
   // fresh layout. Another engine's boxes are dropped altogether.
   const ids = new Set(graph.nodes.map((n) => n.id));
   const edgeIds = new Set(graph.edges.map((e) => e.id));
+  // A broken box (JSON turns NaN into null) is dropped either way, so the
+  // layout's box for that node shows instead.
   const kept = Object.fromEntries(
     Object.entries(s.positions ?? {}).filter(([id, p]) => ids.has(id) && hasFiniteBox(p)),
   );
@@ -244,7 +246,7 @@ export function restoreSession(session: SavedSession, engine: string): RestoredS
       // dropped with another engine's boxes.
       ...(sameEngine
         ? {
-            positions: reuse ? (s.positions ?? {}) : kept,
+            positions: kept,
             residualSides: Object.fromEntries(Object.entries(s.residualSides ?? {}).filter(([id]) => ids.has(id))),
             curveSides: Object.fromEntries(Object.entries(s.curveSides ?? {}).filter(([id]) => edgeIds.has(id))),
           }
