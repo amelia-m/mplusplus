@@ -417,7 +417,12 @@ function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<H
   cancelNodeDrag();
   endActiveGesture();
   useStore.getState().loadGraph(graph, layout);
-  if (slice) useStore.setState(slice);
+  // Restored positions go over the new layout's, so a node with no saved
+  // position (new since the save) keeps the one the layout just gave it.
+  if (slice) {
+    const positions = slice.positions && { ...useStore.getState().positions, ...slice.positions };
+    useStore.setState(positions ? { ...slice, positions } : slice);
+  }
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
   t.getState().clear();
 }

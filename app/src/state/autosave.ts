@@ -201,21 +201,27 @@ export function layoutFitsGraph(layout: LayoutResult, graph: ModelGraph): boolea
 /**
  * Rebuild the graph from the saved text, with the saved slice and, when it
  * still fits the graph and was made by `engine` (the one the app lays out
- * with now), the saved layout. Otherwise the model is laid out again, and
- * the saved positions, which belong to the old layout, are left out (a
- * diagram saved with the ELK engine, dropped 2026-11-03, would otherwise
- * keep ELK's boxes). Global style fields added since the save take their
+ * with now), the saved layout. Otherwise the model is laid out again: with
+ * the same engine the saved positions of nodes that still exist are kept
+ * over it; from another engine they are left out (a diagram saved with the
+ * ELK engine, dropped 2026-11-03, would otherwise keep ELK's boxes). Global style fields added since the save take their
  * defaults. Throws when the text no longer parses.
  */
 export function restoreSession(session: SavedSession, engine: string): RestoredSession {
   const graph = buildGraph(parseDgm(session.dgmText));
   const s = session.slice;
-  const reuse = session.engine === engine && layoutFitsGraph(session.layout, graph);
+  const sameEngine = session.engine === engine;
+  const reuse = sameEngine && layoutFitsGraph(session.layout, graph);
+  // Same engine but a layout that no longer fits (ids changed): keep the
+  // user's placement for the nodes that still exist; new ones take the
+  // fresh layout. Another engine's boxes are dropped altogether.
+  const ids = new Set(graph.nodes.map((n) => n.id));
+  const kept = Object.fromEntries(Object.entries(s.positions ?? {}).filter(([id]) => ids.has(id)));
   return {
     graph,
     layout: reuse ? session.layout : null,
     slice: {
-      ...(reuse ? { positions: s.positions ?? {} } : {}),
+      ...(sameEngine ? { positions: reuse ? (s.positions ?? {}) : kept } : {}),
       edgeStyles: s.edgeStyles ?? {},
       nodeStyles: s.nodeStyles ?? {},
       global: { ...DEFAULT_GLOBAL_STYLE, ...(s.global ?? {}) },
