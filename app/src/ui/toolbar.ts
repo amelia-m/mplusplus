@@ -2,12 +2,13 @@
  * Header toolbar: align and distribute the selected nodes, rotate or flip
  * the selection or the whole diagram and grow a selection of factors to
  * their measurement blocks (`render/arrange.ts`), undo and redo (through
- * `state/history.ts`) and re-run the layout.
+ * `state/history.ts`), re-run the layout and switch the page theme.
  */
 import { alignSelected, distributeSelected, type AlignMode, type DistributeMode } from '../render/align.js';
 import { arrangeSelected, selectBlocks } from '../render/arrange.js';
 import type { TransformOp } from '../layout/transform.js';
 import { redoHistory, undoHistory } from '../state/history.js';
+import { nextTheme, parseTheme, themeLabel, THEME_KEY, type ThemeChoice } from './theme.js';
 
 const SELECT_BLOCK_MESSAGES = {
   'no-selection': 'Select a factor first: Select block adds what it measures.',
@@ -99,5 +100,33 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
       }),
     ),
     group('Layout', make('Re-run layout', 'btn', () => hooks.onRelayout())),
+    group('View', themeButton(make)),
   );
+}
+
+/** Reads and remembers the choice; storage can be missing or refuse (private windows). */
+function themeButton(make: (label: string, cls: string, fn: () => void) => HTMLButtonElement): HTMLButtonElement {
+  let choice: ThemeChoice = 'auto';
+  try {
+    choice = parseTheme(window.localStorage.getItem(THEME_KEY));
+  } catch {
+    // keep auto
+  }
+  const apply = () => {
+    if (choice === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = choice;
+    btn.textContent = themeLabel(choice);
+  };
+  const btn = make('', 'btn', () => {
+    choice = nextTheme(choice);
+    try {
+      window.localStorage.setItem(THEME_KEY, choice);
+    } catch {
+      // works for this page only
+    }
+    apply();
+  });
+  btn.title = 'Page colors: follow the system (Auto), Light or Dark. The diagram stays on a white sheet.';
+  apply();
+  return btn;
 }

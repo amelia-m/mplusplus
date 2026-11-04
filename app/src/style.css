@@ -1,10 +1,74 @@
 :root {
+  color-scheme: light;
   --bg: #f8fafc;
   --fg: #0f172a;
   --panel: #ffffff;
   --border: #cbd5e1;
   --accent: #2563eb;
   --muted: #64748b;
+  --control: #ffffff;
+  --control-hover: #f1f5f9;
+  --control-active: #e2e8f0;
+  --subpanel: #fafafa;
+  --code: #f1f5f9;
+  --hint: #475569;
+  --drop-over: #eff6ff;
+  --toast: #0f172a;
+  --toast-fg: #ffffff;
+  --notice: #eff6ff;
+  --notice-border: #bfdbfe;
+  --notice-fg: #1e3a8a;
+  /* The diagram's sheet: white in both themes, since the diagram's colors
+     are the user's styles and what an export shows. */
+  --canvas: #ffffff;
+}
+
+/* Dark: by the system setting unless the theme button chose Light, or by
+   the button (ui/theme.ts sets data-theme on <html>). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b1220;
+    --fg: #e2e8f0;
+    --panel: #111827;
+    --border: #334155;
+    --accent: #60a5fa;
+    --muted: #94a3b8;
+    --control: #1f2937;
+    --control-hover: #273449;
+    --control-active: #334155;
+    --subpanel: #0f172a;
+    --code: #1f2937;
+    --hint: #cbd5e1;
+    --drop-over: #172554;
+    --toast: #e2e8f0;
+    --toast-fg: #0f172a;
+    --notice: #172554;
+    --notice-border: #1e40af;
+    --notice-fg: #dbeafe;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --fg: #e2e8f0;
+  --panel: #111827;
+  --border: #334155;
+  --accent: #60a5fa;
+  --muted: #94a3b8;
+  --control: #1f2937;
+  --control-hover: #273449;
+  --control-active: #334155;
+  --subpanel: #0f172a;
+  --code: #1f2937;
+  --hint: #cbd5e1;
+  --drop-over: #172554;
+  --toast: #e2e8f0;
+  --toast-fg: #0f172a;
+  --notice: #172554;
+  --notice-border: #1e40af;
+  --notice-fg: #dbeafe;
 }
 
 * { box-sizing: border-box; }
@@ -68,13 +132,14 @@ html, body {
   padding: 4px 8px;
   font-size: 12px;
   border: 1px solid var(--border);
-  background: white;
+  background: var(--control);
+  color: var(--fg);
   border-radius: 4px;
   cursor: pointer;
 }
 
-.btn:hover { background: #f1f5f9; }
-.btn:active { background: #e2e8f0; }
+.btn:hover { background: var(--control-hover); }
+.btn:active { background: var(--control-active); }
 
 .global-panel {
   display: flex;
@@ -115,7 +180,8 @@ html, body {
   padding: 2px 4px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: white;
+  background: var(--control);
+  color: var(--fg);
 }
 
 .global-control input[type=range] {
@@ -141,19 +207,19 @@ html, body {
 
 .dropzone.drag-over {
   border-color: var(--accent);
-  background: #eff6ff;
+  background: var(--drop-over);
 }
 
 .dropzone.hidden { display: none; }
 
 .dropzone p {
   margin: 0 0 4px;
-  color: #475569;
+  color: var(--hint);
   font-size: 13px;
 }
 
 .dropzone code {
-  background: #f1f5f9;
+  background: var(--code);
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -162,8 +228,8 @@ html, body {
   position: fixed;
   top: 12px;
   right: 12px;
-  background: #0f172a;
-  color: white;
+  background: var(--toast);
+  color: var(--toast-fg);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -174,6 +240,7 @@ html, body {
 
 .toast.error {
   background: #b91c1c;
+  color: #ffffff;
 }
 
 .notice {
@@ -182,11 +249,11 @@ html, body {
   gap: 8px;
   margin: 0 16px;
   padding: 6px 10px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--notice);
+  border: 1px solid var(--notice-border);
   border-radius: 6px;
   font-size: 12px;
-  color: #1e3a8a;
+  color: var(--notice-fg);
 }
 
 .notice[hidden] { display: none; }
@@ -206,7 +273,7 @@ html, body {
 }
 
 #canvas {
-  background: var(--panel);
+  background: var(--canvas);
   border: 1px solid var(--border);
   border-radius: 4px;
   width: 100%;
@@ -247,7 +314,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px;
-  background: #fafafa;
+  background: var(--subpanel);
 }
 
 .inspector-panel h3 {
@@ -278,7 +345,8 @@ html, body {
   padding: 2px 4px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: white;
+  background: var(--control);
+  color: var(--fg);
   width: 100%;
 }
 
@@ -288,7 +356,7 @@ html, body {
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: white;
+  background: var(--control);
   cursor: pointer;
 }
 
