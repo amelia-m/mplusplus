@@ -21,6 +21,8 @@
   /* The diagram's sheet: white in both themes, since the diagram's colors
      are the user's styles and what an export shows. */
   --canvas: #ffffff;
+  /* Selection on the canvas: one value in both themes, like the sheet. */
+  --canvas-accent: #2563eb;
 }
 
 /* Dark: by the system setting unless the theme button chose Light, or by
@@ -386,10 +388,10 @@ g.node:active { cursor: grabbing; }
 g.node.selected ellipse,
 g.node.selected rect,
 g.node.selected polygon {
-  stroke: var(--accent) !important;
+  stroke: var(--canvas-accent) !important;
   stroke-width: 3 !important;
 }
 g.edge { cursor: pointer; }
 g.edge.selected path.edge-path {
-  filter: drop-shadow(0 0 2px var(--accent));
+  filter: drop-shadow(0 0 2px var(--canvas-accent));
 }
