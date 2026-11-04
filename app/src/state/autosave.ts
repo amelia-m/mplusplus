@@ -163,12 +163,30 @@ export function listSlots(storage: SessionStorage): StoredSlot[] {
 
 export interface RestoredSession {
   graph: ModelGraph;
-  /** The saved layout, or null when it no longer fits the graph and the model must be laid out again. */
+  /**
+   * The saved layout, or null when the model must be laid out again: the
+   * layout no longer fits the graph, or it was made by another engine.
+   */
   layout: LayoutResult | null;
-  slice: HistorySlice;
+  /** The saved slice; without positions when the layout is redone, so the new layout's boxes stand. */
+  slice: Partial<HistorySlice>;
 }
 
 const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v);
+const hasFiniteBox = (p: unknown): boolean => {
+  if (typeof p !== 'object' || p === null) return false;
+  const { x, y, width, height } = p as Partial<NodeLayout>;
+  return [x, y, width, height].every(finite);
+};
+
+/**
+ * The positions to use after a restore: `restored` laid over `fresh` (the
+ * layout's boxes for the graph just loaded), so a node with no saved
+ * position, new since the save, keeps the box the layout gave it.
+ */
+export function restoredPositions<P>(fresh: Record<string, P>, restored: Record<string, P>): Record<string, P> {
+  return { ...fresh, ...restored };
+}
 
 /**
  * True when `layout` places exactly the nodes of `graph`, each with a
@@ -196,17 +214,32 @@ export function layoutFitsGraph(layout: LayoutResult, graph: ModelGraph): boolea
 
 /**
  * Rebuild the graph from the saved text, with the saved slice and, when it
- * still fits the graph, the saved layout. Global style fields added since
- * the save take their defaults. Throws when the text no longer parses.
+ * still fits the graph and was made by `engine` (the one the app lays out
+ * with now), the saved layout. Otherwise the model is laid out again: with
+ * the same engine the saved positions of nodes that still exist are kept
+ * over it; from another engine they are left out (a diagram saved with the
+ * ELK engine, dropped 2026-11-03, would otherwise keep ELK's boxes). Global style fields added since the save take their
+ * defaults. Throws when the text no longer parses.
  */
-export function restoreSession(session: SavedSession): RestoredSession {
+export function restoreSession(session: SavedSession, engine: string): RestoredSession {
   const graph = buildGraph(parseDgm(session.dgmText));
   const s = session.slice;
+  const sameEngine = session.engine === engine;
+  const reuse = sameEngine && layoutFitsGraph(session.layout, graph);
+  // Same engine but a layout that no longer fits (ids changed): keep the
+  // user's placement for the nodes that still exist; new ones take the
+  // fresh layout. Another engine's boxes are dropped altogether.
+  const ids = new Set(graph.nodes.map((n) => n.id));
+  // A broken box (JSON turns NaN into null) is dropped either way, so the
+  // layout's box for that node shows instead.
+  const kept = Object.fromEntries(
+    Object.entries(s.positions ?? {}).filter(([id, p]) => ids.has(id) && hasFiniteBox(p)),
+  );
   return {
     graph,
-    layout: layoutFitsGraph(session.layout, graph) ? session.layout : null,
+    layout: reuse ? session.layout : null,
     slice: {
-      positions: s.positions ?? {},
+      ...(sameEngine ? { positions: kept } : {}),
       edgeStyles: s.edgeStyles ?? {},
       nodeStyles: s.nodeStyles ?? {},
       global: { ...DEFAULT_GLOBAL_STYLE, ...(s.global ?? {}) },

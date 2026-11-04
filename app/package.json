@@ -13,7 +13,6 @@
   "dependencies": {
     "d3-drag": "^3.0.0",
     "d3-selection": "^3.0.0",
-    "elkjs": "^0.9.3",
     "zundo": "^2.3.0",
     "zustand": "^4.5.5"
   },

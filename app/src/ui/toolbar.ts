@@ -1,7 +1,6 @@
 /**
  * Header toolbar: align and distribute the selected nodes, undo and redo
- * (through `state/history.ts`), choose the layout engine and re-run the
- * layout.
+ * (through `state/history.ts`) and re-run the layout.
  */
 import { alignSelected, distributeSelected, type AlignMode, type DistributeMode } from '../render/align.js';
 import { redoHistory, undoHistory } from '../state/history.js';
@@ -9,18 +8,9 @@ import { redoHistory, undoHistory } from '../state/history.js';
 export interface ToolbarHooks {
   onRedraw(): void;
   onRelayout(): void;
-  /** Engines to offer, by registry name, and the one selected at first. */
-  engines: { name: string; label: string }[];
-  engine: string;
-  onEngineChange(name: string): void;
 }
 
-export interface Toolbar {
-  /** Show `name` as the selected engine, without laying the model out again (a restored diagram's engine). */
-  setEngine(name: string): void;
-}
-
-export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): Toolbar {
+export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
   host.innerHTML = '';
   host.classList.add('toolbar');
 
@@ -76,21 +66,6 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): Toolbar {
         if (redoHistory()) hooks.onRedraw();
       }),
     ),
+    group('Layout', make('Re-run layout', 'btn', () => hooks.onRelayout())),
   );
-  const select = engineSelect(hooks);
-  host.append(group('Layout', select, make('Re-run layout', 'btn', () => hooks.onRelayout())));
-  return {
-    setEngine: (name) => {
-      select.value = name;
-    },
-  };
-}
-
-function engineSelect(hooks: ToolbarHooks): HTMLSelectElement {
-  const select = document.createElement('select');
-  select.className = 'engine-select';
-  select.title = 'Layout engine';
-  for (const e of hooks.engines) select.add(new Option(e.label, e.name, false, e.name === hooks.engine));
-  select.addEventListener('change', () => hooks.onEngineChange(select.value));
-  return select;
 }
