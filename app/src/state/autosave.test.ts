@@ -65,6 +65,15 @@ describe('autosave', () => {
     expect(restoreSession(s, 'sem').layout).toBeNull();
   });
 
+  it('keeps the saved positions of surviving nodes when a same-engine layout no longer fits', () => {
+    const s = session();
+    s.layout = { ...s.layout, nodes: s.layout.nodes.slice(1) }; // ids changed: the layout cannot be reused
+    s.slice = { ...s.slice, positions: { ...s.slice.positions, gone: { x: 1, y: 2, width: 3, height: 4 } } };
+    const r = restoreSession(s, 'sem');
+    expect(r.layout).toBeNull();
+    expect(r.slice.positions).toEqual(slice.positions); // fa kept, the vanished node dropped
+  });
+
   it('lays out again, without the saved boxes, a diagram saved with another engine (ELK, dropped)', () => {
     const r = restoreSession({ ...session(), engine: 'elk-layered' }, 'sem');
     expect(r.layout).toBeNull();

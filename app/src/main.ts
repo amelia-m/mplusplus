@@ -224,8 +224,11 @@ function saveNow(): void {
   if (!autosave || discarding || !current || !state) return;
   const input = { fileName: current.fileName, dgmText: current.dgmText, state };
   // Storage is full: free closed tabs' slots and try again, once per
-  // diagram, then say so if it still fails.
-  if (autosave.save(input) !== 'refused' || saveRefused) return;
+  // diagram, then say so if it still fails. A save that goes through
+  // re-arms the retry for a later refusal.
+  const result = autosave.save(input);
+  if (result === 'saved') saveRefused = false;
+  if (result !== 'refused' || saveRefused) return;
   void autosave.makeRoomAndSave(input).then((result) => {
     if (result === 'refused' && !saveRefused) {
       toast('Autosave is off for this diagram: browser storage refused it.', true);
@@ -308,6 +311,7 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     redraw();
     current = { fileName: session.fileName, dgmText: session.dgmText };
     offered = null;
+    saveRefused = false;
     autosave?.markSaved(saveState());
     dropzone.classList.add('hidden');
     const when = new Date(session.savedAt).toLocaleString();
@@ -344,6 +348,9 @@ async function handleFile(file: File): Promise<void> {
       saveRefused = false;
       offered = null;
       notice.hidden = true;
+      // After a restore that failed, autosave stopped to keep the broken
+      // slot; a new file gets a new slot, so it is saved and the old one kept.
+      if (autosave?.isStopped && !discarding) await autosave.startFresh();
       redraw();
       dropzone.classList.add('hidden');
       toast(`Loaded ${file.name}`);
@@ -411,7 +418,12 @@ function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<H
   cancelNodeDrag();
   endActiveGesture();
   useStore.getState().loadGraph(graph, layout);
-  if (slice) useStore.setState(slice);
+  // Restored positions go over the new layout's, so a node with no saved
+  // position (new since the save) keeps the one the layout just gave it.
+  if (slice) {
+    const positions = slice.positions && { ...useStore.getState().positions, ...slice.positions };
+    useStore.setState(positions ? { ...slice, positions } : slice);
+  }
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
   t.getState().clear();
 }
