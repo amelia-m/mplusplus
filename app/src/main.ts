@@ -28,6 +28,7 @@ import { classifyHistoryKey } from './ui/historyKeys.js';
 import { countMatchedPValues } from './ui/pValueMatch.js';
 import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
+import { DEMOS, type Demo } from './ui/demos.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions } from './model/caption.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
@@ -110,6 +111,11 @@ app.innerHTML = `
   <div id="dropzone" class="dropzone">
     <p>Drop a <code>.dgm</code> or <code>.out</code> file here, or click to choose.</p>
     <input type="file" id="filepicker" accept=".dgm,.out" />
+    <details id="demos" class="demos">
+      <summary>Or click here to select a demo example</summary>
+      <p class="demos-note">Invented models fitted by Mplus to simulated data. Open one, or download its files to try a drop.</p>
+      <ul id="demo-list"></ul>
+    </details>
   </div>
   <div id="toast"></div>
   <div id="notice" class="notice" hidden>
@@ -161,7 +167,39 @@ mountInspector(inspectorHost, redraw);
 
 wireSelection(svg, marqueeG, redraw);
 
-dropzone.addEventListener('click', () => picker.click());
+dropzone.addEventListener('click', (e) => {
+  // A click in the demo list opens a demo or a download, not the file picker.
+  if ((e.target as Element).closest('#demos')) return;
+  picker.click();
+});
+
+mountDemos(document.querySelector<HTMLUListElement>('#demo-list')!);
+
+/** One row per demo: an Open button and a download link per file. */
+function mountDemos(list: HTMLUListElement): void {
+  for (const demo of DEMOS) {
+    const item = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn';
+    open.textContent = demo.label;
+    open.addEventListener('click', () => void openDemo(demo));
+    item.append(open);
+    for (const f of demo.files) {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([f.text], { type: 'text/plain' }));
+      link.download = f.name;
+      link.textContent = f.name;
+      item.append(' ', link);
+    }
+    list.append(item);
+  }
+}
+
+/** Open a demo as if its files were dropped one after another, `.dgm` first. */
+async function openDemo(demo: Demo): Promise<void> {
+  for (const f of demo.files) await handleFile(new File([f.text], f.name, { type: 'text/plain' }));
+}
 dropzone.addEventListener('dragover', () => dropzone.classList.add('drag-over'));
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
 

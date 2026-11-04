@@ -12,5 +12,8 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    // The demo examples (src/ui/demos.ts) import fixtures from the repo's
+    // dgm/ folder, outside app/; the build inlines them either way.
+    fs: { allow: ['.', '../dgm'] },
   },
 });
