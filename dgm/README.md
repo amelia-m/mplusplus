@@ -2,7 +2,7 @@
 
 Most files here are synthetic: an invented model with invented variable names, fitted by Mplus to data that Mplus simulated (`MONTECARLO`). The rest come from openly licensed (CC0 1.0 or CC BY 4.0) published replication packages, listed under "Published models" below. No other research data, and nothing derived from the Mplus User's Guide examples, goes in this folder. The parser and graph test suites read every `.dgm` here at runtime.
 
-License: the synthetic fixtures (the `syn_*` files, their inputs in `tools/mplus/synthetic/` and `app/test/fixtures/sample.out`) are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/; Amelia, 2026-11-03), to the extent Amelia holds rights in them, so anyone may reuse them without conditions. Text Mplus itself adds to its output (such as the version header and the copyright notice at the end of `sample.out`) is not Amelia's to dedicate and is not covered; the copyright notice in it is Muthén & Muthén's. The published models keep their own licenses, given with each below, and so do the files Mplus derived from them. The rest of the repository is LGPL-3.0-or-later (see the top-level README), except the Clanker Constitution in `AGENTS.md`, which keeps its own license (CC BY 4.0, Kenn Software LLC).
+License: the synthetic fixtures (the `syn_*` files, their inputs in `tools/mplus/synthetic/`, and `app/test/fixtures/sample.out` and `syn_twofactor.out`, the outputs of `syn_sem` and `syn_twofactor`; the app bundles some of them as demo examples) are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/; Amelia, 2026-11-03), to the extent Amelia holds rights in them, so anyone may reuse them without conditions. Text Mplus itself adds to its output (such as the version header and the copyright notice at the end of both `.out` files) is not Amelia's to dedicate and is not covered; the copyright notice in them is Muthén & Muthén's, and the app's demo note says so. The published models keep their own licenses, given with each below, and so do the files Mplus derived from them. The rest of the repository is LGPL-3.0-or-later (see the top-level README), except the Clanker Constitution in `AGENTS.md`, which keeps its own license (CC BY 4.0, Kenn Software LLC).
 
 | File | Model | Covers |
 |---|---|---|
@@ -13,8 +13,7 @@ License: the synthetic fixtures (the `syn_*` files, their inputs in `tools/mplus
 | `syn_range.dgm` | Two factors (`fg`, `fh`) regressed on `t1`, predicting `t2` | Mplus list ranges: generated names in NAMES (`g1-g4`), a USEVARIABLES range that leaves out `e1` (`g1-t2`), a modifier on an indicator range (`g1-g4*`), a label on a range (`h2-h4 (lh)`, code-91 rows), latent ranges on both sides of ON (`fg-fh ON t1`, `t2 ON fg-fh`) |
 | `syn_label.dgm` | The `syn_sem` model and data, with equality labels on loadings (`la`), on two covariances (`c4 WITH b4 (cv); x1 WITH x2 (cv);`) and on two residual variances (`rv`) | Constraint-label rows 91 (loading), 92 (covariance) and 94 (residual variance); 95 (latent variance) is not in this fixture and is tested with a hand-written row in `dgm.test.ts` |
 
-`app/test/fixtures/sample.out` is the Mplus output of the `syn_sem` model, with
-`OUTPUT: STANDARDIZED` (STDYX, STDY and STD sections).
+`app/test/fixtures/sample.out` and `app/test/fixtures/syn_twofactor.out` are the Mplus outputs of the `syn_sem` and `syn_twofactor` models, with `OUTPUT: STANDARDIZED` (STDYX, STDY and STD sections). Both are offered as demo examples in the app, beside their `.dgm` files.
 
 ## Published models
 
@@ -59,11 +58,7 @@ used), in a scratch folder holding copies of those inputs:
 2. `Mplus syn_sem.inp /diagram` fits the model and writes `syn_sem.out` and
    `syn_sem.dgm`.
 
-Do the same for `syn_twofactor`, `syn_path` and `syn_range`; `syn_cint.inp`
-and `syn_label.inp` read the `syn_sem.dat` from step 1. Copy the `.dgm`
-here, and `syn_sem.out` to `app/test/fixtures/sample.out`. Regenerated files
-keep the same structure; if any estimate shifts, update the spot-check values
-in the tests.
+Do the same for `syn_twofactor`, `syn_path` and `syn_range`; `syn_cint.inp` and `syn_label.inp` read the `syn_sem.dat` from step 1. Copy the `.dgm` here, `syn_sem.out` to `app/test/fixtures/sample.out` and `syn_twofactor.out` to `app/test/fixtures/syn_twofactor.out`, always together with their `.dgm`, since the demo examples pair them. Regenerated files keep the same structure; if any estimate shifts, update the spot-check values in the tests.
 
 `MONTECARLO` saves the data with dependent variables first and covariates
 last (the "Order of variables" list under SAVEDATA INFORMATION in the

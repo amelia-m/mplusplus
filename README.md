@@ -42,7 +42,7 @@ npm run dev
 
 The Vite development server will start at `http://localhost:5173`.
 
-Drop a `.dgm` file anywhere on the page, or click the drop zone to choose one. To attach p-values, then drop the `.out` file from the same model; a `.out` is rejected until a `.dgm` is loaded.
+Drop a `.dgm` file anywhere on the page, or click the drop zone to choose one. To try the app without Mplus, open a demo example from the drop zone; each one's `.dgm` and `.out` files can also be downloaded there. To attach p-values, then drop the `.out` file from the same model; a `.out` is rejected until a `.dgm` is loaded.
 
 ### Testing
 

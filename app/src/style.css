@@ -226,6 +226,34 @@ html, body {
   border-radius: 3px;
 }
 
+.demos {
+  margin-top: 6px;
+  font-size: 13px;
+  cursor: default;
+}
+
+.demos summary {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.demos .demos-note {
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.demos ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.demos a { color: var(--accent); font-size: 12px; }
+
 .toast {
   position: fixed;
   top: 12px;

@@ -28,6 +28,7 @@ import { classifyHistoryKey } from './ui/historyKeys.js';
 import { countMatchedPValues } from './ui/pValueMatch.js';
 import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
+import { DEMOS, type Demo } from './ui/demos.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions } from './model/caption.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
@@ -110,6 +111,11 @@ app.innerHTML = `
   <div id="dropzone" class="dropzone">
     <p>Drop a <code>.dgm</code> or <code>.out</code> file here, or click to choose.</p>
     <input type="file" id="filepicker" accept=".dgm,.out" />
+    <details id="demos" class="demos">
+      <summary>Or click here to select a demo example</summary>
+      <p class="demos-note">Invented models fitted by Mplus to simulated data. Open one, or download its files to try a drop. The models and data are public domain (CC0); the header and copyright notice Mplus writes into each <code>.out</code> are Muthén &amp; Muthén's.</p>
+      <ul id="demo-list"></ul>
+    </details>
   </div>
   <div id="toast"></div>
   <div id="notice" class="notice" hidden>
@@ -161,7 +167,55 @@ mountInspector(inspectorHost, redraw);
 
 wireSelection(svg, marqueeG, redraw);
 
-dropzone.addEventListener('click', () => picker.click());
+dropzone.addEventListener('click', (e) => {
+  // A click in the demo list opens a demo or a download, not the file picker.
+  if ((e.target as Element).closest('#demos')) return;
+  picker.click();
+});
+
+mountDemos(document.querySelector<HTMLUListElement>('#demo-list')!);
+
+/** One row per demo: an Open button and a download link per file. */
+function mountDemos(list: HTMLUListElement): void {
+  for (const demo of DEMOS) {
+    const item = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn';
+    open.textContent = demo.label;
+    open.addEventListener('click', () => void openDemo(demo));
+    item.append(open);
+    for (const f of demo.files) {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([f.text], { type: 'text/plain' }));
+      link.download = f.name;
+      link.textContent = f.name;
+      item.append(' ', link);
+    }
+    list.append(item);
+  }
+}
+
+/** Set while a demo loads, so a second click cannot interleave its files with the first's. */
+let demoLoading = false;
+
+/**
+ * Open a demo as if its files were dropped one after another, `.dgm` first,
+ * stopping at the first that fails so its message stays on screen. The
+ * whole demo is one starting point: Undo does not take its p-values off.
+ */
+async function openDemo(demo: Demo): Promise<void> {
+  if (demoLoading) return;
+  demoLoading = true;
+  try {
+    for (const f of demo.files) {
+      if (!(await handleFile(new File([f.text], f.name, { type: 'text/plain' })))) return;
+    }
+    clearHistory();
+  } finally {
+    demoLoading = false;
+  }
+}
 dropzone.addEventListener('dragover', () => dropzone.classList.add('drag-over'));
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
 
@@ -349,7 +403,8 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
   }
 }
 
-async function handleFile(file: File): Promise<void> {
+/** Load a dropped, picked or demo file; true when it was loaded or attached. */
+async function handleFile(file: File): Promise<boolean> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
@@ -369,27 +424,30 @@ async function handleFile(file: File): Promise<void> {
       redraw();
       dropzone.classList.add('hidden');
       toast(`Loaded ${file.name}`);
+      return true;
     } else if (kind === 'out') {
       if (!useStore.getState().graph) {
         toast('Load a .dgm file before attaching a .out file.', true);
-        return;
+        return false;
       }
       const { pValues } = await loadOutFile(file);
       const graph = useStore.getState().graph;
       const n = graph ? countMatchedPValues(pValues, graph) : 0;
       if (n === 0) {
         toast(`No p-values in ${file.name} match an edge in this diagram.`, true);
-        return;
+        return false;
       }
       useStore.getState().setPValues(pValues);
       redraw();
       toast(`Attached p-values from ${file.name} (${n} edges).`);
-    } else {
-      toast('Unknown file type. Expected .dgm or .out.', true);
+      return true;
     }
+    toast('Unknown file type. Expected .dgm or .out.', true);
+    return false;
   } catch (err) {
     console.error(err);
     toast(`Failed to load ${file.name}: ${(err as Error).message}`, true);
+    return false;
   }
 }
 
@@ -437,6 +495,11 @@ function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<H
     const positions = slice.positions && restoredPositions(useStore.getState().positions, slice.positions);
     useStore.setState(positions ? { ...slice, positions } : slice);
   }
+  clearHistory();
+}
+
+/** Make the current state the undo baseline. */
+function clearHistory(): void {
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;
   t.getState().clear();
 }
