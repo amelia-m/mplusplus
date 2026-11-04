@@ -10,6 +10,8 @@ import { parseOut, buildPValueMap, type ParsedOut } from '../parser/out.js';
 
 export interface LoadedDgm {
   file: File;
+  /** The file's text, kept for autosave (`state/autosave.ts`). */
+  text: string;
   parsed: DgmFile;
   graph: ModelGraph;
 }
@@ -18,7 +20,7 @@ export async function loadDgmFile(file: File): Promise<LoadedDgm> {
   const text = await file.text();
   const parsed = parseDgm(text);
   const graph = buildGraph(parsed);
-  return { file, parsed, graph };
+  return { file, text, parsed, graph };
 }
 
 export interface LoadedOut {
