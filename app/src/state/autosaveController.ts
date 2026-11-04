@@ -84,6 +84,11 @@ export class AutosaveController {
     return this.tabId;
   }
 
+  /** True after `stop` or Discard: nothing is saved until `startFresh`. */
+  get isStopped(): boolean {
+    return this.stopped;
+  }
+
   /** Claim this tab's id, tidy old slots, and say what to restore or offer. */
   async start(): Promise<StartResult> {
     const { storage, locks, channel, tabStore, newId } = this.deps;
@@ -124,8 +129,8 @@ export class AutosaveController {
    * After a refused save of `input`: delete closed tabs' slots, oldest
    * first, asking the lock API which tabs are open now, and retry after
    * each. Deletes nothing, and returns 'refused', when it cannot tell which
-   * are open, or when deleting every closed slot could not make room for
-   * this one. Returns 'unchanged' without touching storage when a newer
+   * are open; when deleting every closed slot still does not make room,
+   * they are put back and it returns 'refused'. Returns 'unchanged' without touching storage when a newer
    * save or a Discard happened while it waited, so it never writes stale
    * work over newer work or brings a discarded diagram back.
    */
@@ -140,16 +145,27 @@ export class AutosaveController {
     const closed = listSlots(this.deps.storage)
       .reverse()
       .filter((s) => isClosed(s, open, this.tabId!));
-    const freeable = closed.reduce((n, s) => n + (this.deps.storage.getItem(s.key)?.length ?? 0), 0);
-    if (freeable < json.length) return 'refused';
+    // Delete tentatively: if even all of them do not make room, put them
+    // back, so a save that cannot fit costs no one their diagram.
+    const removed: Array<[string, string]> = [];
     for (const s of closed) {
+      const raw = this.deps.storage.getItem(s.key);
+      if (raw === null) continue;
       clearSession(this.deps.storage, s.key);
+      removed.push([s.key, raw]);
       try {
         this.deps.storage.setItem(key, json);
         this.lastSaved = input.state;
         return 'saved';
       } catch {
         // Still too full; free the next one.
+      }
+    }
+    for (const [k, raw] of removed) {
+      try {
+        this.deps.storage.setItem(k, raw);
+      } catch {
+        // The space it freed is still free, so this only fails if another tab took it.
       }
     }
     return 'refused';
@@ -169,6 +185,24 @@ export class AutosaveController {
    */
   stop(): void {
     this.stopped = true;
+  }
+
+  /**
+   * After `stop`: save from now on under a new id, so a diagram loaded into
+   * this tab is autosaved while the slot that failed to restore is kept
+   * (it becomes a closed tab's slot once this tab reloads with the new id,
+   * and is offered or aged out from there).
+   */
+  async startFresh(): Promise<void> {
+    const { locks, tabStore, newId, channel } = this.deps;
+    try {
+      this.tabId = await claimTabId(locks, tabStore ? { getItem: () => null, setItem: (k, v) => tabStore.setItem(k, v) } : null, newId, { channel });
+    } catch {
+      this.tabId = newId();
+    }
+    this.stopped = false;
+    this.lastSaved = null;
+    this.generation++;
   }
 
   /** Delete this tab's slot, and save nothing more in this page (it reloads next). No other slot is touched. */
