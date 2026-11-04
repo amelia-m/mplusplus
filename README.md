@@ -63,7 +63,7 @@ Emits the production bundle to `app/dist/`. The output uses relative asset paths
 
 Copyright 2026 Amelia Miramonti. mplusplus is free software: you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version (`LGPL-3.0-or-later`). See [COPYING.LESSER](COPYING.LESSER) and the GNU General Public License it builds on, [COPYING](COPYING). It is distributed in the hope that it will be useful, but without any warranty; see the licenses for details.
 
-The fixtures in `dgm/` have their own terms, given in [dgm/README.md](dgm/README.md). `AGENTS.md` includes the Clanker Constitution (Kenn Software LLC), which keeps its own license, CC BY 4.0.
+The synthetic fixtures (in `dgm/`, `tools/mplus/synthetic/` and `app/test/fixtures/sample.out`) and the published models in `dgm/` have their own terms, given in [dgm/README.md](dgm/README.md). `AGENTS.md` includes the Clanker Constitution (Kenn Software LLC), which keeps its own license, CC BY 4.0.
 
 ## AI assistance
 
