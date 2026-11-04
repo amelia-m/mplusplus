@@ -126,6 +126,7 @@ app.innerHTML = `
   </main>
   <footer class="app-credit">
     Designed by Amelia Miramonti and implemented with Claude Code (Anthropic).
+    mplusplus is an independent project: it is not official, and it is not affiliated with, endorsed by or maintained by Muthén &amp; Muthén, the makers of Mplus.
   </footer>
 `;
 
