@@ -31,7 +31,7 @@ import { describeTarget } from './ui/textEntry.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions } from './model/caption.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
-import { restoreSession, type SavedSession, type SaveState, type SessionStorage } from './state/autosave.js';
+import { restoredPositions, restoreSession, type SavedSession, type SaveState, type SessionStorage } from './state/autosave.js';
 import { AutosaveController } from './state/autosaveController.js';
 import type { TabChannel } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
@@ -320,6 +320,9 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     else showNotice(`Opened ${session.fileName} from a closed tab (saved ${when}).${how}`, 'opened');
   } catch (err) {
     console.warn('Autosaved diagram could not be restored.', err);
+    // A file the user loaded while this was laid out wins here too: it
+    // stays on screen and keeps autosaving.
+    if (fileLoaded) return;
     if (source === 'own') {
       // Keep the saved copy (a later version may restore it) and stop saving
       // the half-restored state over it; Discard still removes it.
@@ -418,10 +421,8 @@ function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<H
   cancelNodeDrag();
   endActiveGesture();
   useStore.getState().loadGraph(graph, layout);
-  // Restored positions go over the new layout's, so a node with no saved
-  // position (new since the save) keeps the one the layout just gave it.
   if (slice) {
-    const positions = slice.positions && { ...useStore.getState().positions, ...slice.positions };
+    const positions = slice.positions && restoredPositions(useStore.getState().positions, slice.positions);
     useStore.setState(positions ? { ...slice, positions } : slice);
   }
   const t = (useStore as unknown as { temporal: { getState(): { clear(): void } } }).temporal;

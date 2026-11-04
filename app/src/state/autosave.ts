@@ -173,6 +173,20 @@ export interface RestoredSession {
 }
 
 const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v);
+const hasFiniteBox = (p: unknown): boolean => {
+  if (typeof p !== 'object' || p === null) return false;
+  const { x, y, width, height } = p as Partial<NodeLayout>;
+  return [x, y, width, height].every(finite);
+};
+
+/**
+ * The positions to use after a restore: `restored` laid over `fresh` (the
+ * layout's boxes for the graph just loaded), so a node with no saved
+ * position, new since the save, keeps the box the layout gave it.
+ */
+export function restoredPositions<P>(fresh: Record<string, P>, restored: Record<string, P>): Record<string, P> {
+  return { ...fresh, ...restored };
+}
 
 /**
  * True when `layout` places exactly the nodes of `graph`, each with a
@@ -217,7 +231,9 @@ export function restoreSession(session: SavedSession, engine: string): RestoredS
   // fresh layout. Another engine's boxes are dropped altogether.
   const ids = new Set(graph.nodes.map((n) => n.id));
   const edgeIds = new Set(graph.edges.map((e) => e.id));
-  const kept = Object.fromEntries(Object.entries(s.positions ?? {}).filter(([id]) => ids.has(id)));
+  const kept = Object.fromEntries(
+    Object.entries(s.positions ?? {}).filter(([id, p]) => ids.has(id) && hasFiniteBox(p)),
+  );
   return {
     graph,
     layout: reuse ? session.layout : null,
