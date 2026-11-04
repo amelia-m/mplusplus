@@ -230,6 +230,8 @@ export function restoreSession(session: SavedSession, engine: string): RestoredS
   // user's placement for the nodes that still exist; new ones take the
   // fresh layout. Another engine's boxes are dropped altogether.
   const ids = new Set(graph.nodes.map((n) => n.id));
+  // A broken box (JSON turns NaN into null) is dropped either way, so the
+  // layout's box for that node shows instead.
   const kept = Object.fromEntries(
     Object.entries(s.positions ?? {}).filter(([id, p]) => ids.has(id) && hasFiniteBox(p)),
   );
@@ -237,7 +239,7 @@ export function restoreSession(session: SavedSession, engine: string): RestoredS
     graph,
     layout: reuse ? session.layout : null,
     slice: {
-      ...(sameEngine ? { positions: reuse ? (s.positions ?? {}) : kept } : {}),
+      ...(sameEngine ? { positions: kept } : {}),
       edgeStyles: s.edgeStyles ?? {},
       nodeStyles: s.nodeStyles ?? {},
       global: { ...DEFAULT_GLOBAL_STYLE, ...(s.global ?? {}) },
