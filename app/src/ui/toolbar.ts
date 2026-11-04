@@ -9,6 +9,12 @@ import { arrangeSelected, selectBlocks } from '../render/arrange.js';
 import type { TransformOp } from '../layout/transform.js';
 import { redoHistory, undoHistory } from '../state/history.js';
 
+const SELECT_BLOCK_MESSAGES = {
+  'no-selection': 'Select a factor first: Select block adds what it measures.',
+  'no-factor': 'Select a factor (an ellipse): Select block adds what it measures.',
+  complete: 'The selected factors’ blocks are already selected.',
+} as const;
+
 export interface ToolbarHooks {
   onRedraw(): void;
   onRelayout(): void;
@@ -34,8 +40,8 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
     hooks.onRedraw();
   };
   const arrange = (op: TransformOp) => () => {
-    arrangeSelected(op);
-    hooks.onRedraw();
+    if (arrangeSelected(op)) hooks.onRedraw();
+    else hooks.onMessage('Finish the drag first, then rotate or flip.');
   };
   const titled = (btn: HTMLButtonElement, title: string): HTMLButtonElement => {
     btn.title = title;
@@ -73,13 +79,14 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
     ),
     group(
       'Arrange',
-      titled(make('Rotate ↺', 'btn', arrange('rotate-ccw')), 'Rotate 90° counter-clockwise (the selection, or the whole diagram when nothing is selected)'),
-      titled(make('Rotate ↻', 'btn', arrange('rotate-cw')), 'Rotate 90° clockwise (the selection, or the whole diagram when nothing is selected)'),
-      titled(make('Flip ↔', 'btn', arrange('flip-h')), 'Flip left to right (the selection, or the whole diagram)'),
-      titled(make('Flip ↕', 'btn', arrange('flip-v')), 'Flip top to bottom (the selection, or the whole diagram)'),
+      titled(make('Rotate ↺', 'btn', arrange('rotate-ccw')), 'Rotate 90° counter-clockwise (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Rotate ↻', 'btn', arrange('rotate-cw')), 'Rotate 90° clockwise (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Flip ↔', 'btn', arrange('flip-h')), 'Flip left to right (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Flip ↕', 'btn', arrange('flip-v')), 'Flip top to bottom (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
       titled(make('Select block', 'btn', () => {
-        if (selectBlocks()) hooks.onRedraw();
-        else hooks.onMessage('Select a factor first: Select block adds what it measures.');
+        const result = selectBlocks();
+        if (result === 'added') hooks.onRedraw();
+        else hooks.onMessage(SELECT_BLOCK_MESSAGES[result]);
       }), 'Add everything the selected factors measure (indicators, and first-order factors of a second-order one) to the selection'),
     ),
     group(

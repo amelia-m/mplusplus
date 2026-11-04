@@ -316,8 +316,19 @@ export const useStore = create<AppState & AppActions>()(
           const edge = ends.get(e.id);
           return e.curve && edge ? [{ id: e.id, from: edge.from, to: edge.to, attach: e.curve.attach }] : [];
         });
-        const follow = curveSidesFollowingResiduals(curves, (id) => sides[id] ?? layoutSide.get(id), changed);
-        const nextCurves = Object.keys(follow).length > 0 ? { ...curveSides, ...follow } : curveSides;
+        const follow = curveSidesFollowingResiduals(
+          curves,
+          (id) => sides[id] ?? layoutSide.get(id),
+          changed,
+          new Set(Object.keys(sides)),
+        );
+        let nextCurves = curveSides;
+        for (const [id, side] of Object.entries(follow)) {
+          if (side === null ? !Object.hasOwn(nextCurves, id) : nextCurves[id] === side) continue;
+          if (nextCurves === curveSides) nextCurves = { ...curveSides };
+          if (side === null) delete nextCurves[id];
+          else nextCurves[id] = side;
+        }
         set({ residualSides: sides, curveSides: nextCurves });
       },
 

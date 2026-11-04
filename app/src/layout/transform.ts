@@ -95,7 +95,9 @@ export function transformGroup(input: TransformInput, op: TransformOp): Transfor
   if (ids.size === 0) return result;
   const boxes = [...ids].map((id) => input.positions[id]);
   const pivot = groupPivot(boxes);
-  const aspect = boxes.reduce((n, b) => n + b.width, 0) / boxes.reduce((n, b) => n + b.height, 0);
+  // The widest box over the shortest, so even mixed sizes get enough room
+  // (all sem boxes are the same size today, so this is their own ratio).
+  const aspect = Math.max(...boxes.map((b) => b.width)) / Math.min(...boxes.map((b) => b.height));
   for (const id of ids) {
     const b = input.positions[id];
     const c = transformPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, pivot, op, aspect);
@@ -136,17 +138,24 @@ export function withIndicators(graph: ModelGraph, ids: Iterable<string>): Set<st
 /**
  * New sides for covariance curves drawn between residual tails, after the
  * residuals of `changed` moved: a curve with a changed end bulges to the
- * side both its residuals now share. When its two residuals point
- * different ways it keeps its side (no single bulge would suit both).
+ * side both its residuals now share. When both its ends are back on the
+ * layout default (`stored` has neither), its stored side is cleared (null)
+ * so the layout's applies again. When its two residuals point different
+ * ways it keeps its side (no single bulge would suit both).
  */
 export function curveSidesFollowingResiduals(
   curves: Array<{ id: string; from: string; to: string; attach: 'node' | 'residual' }>,
   residualSideOf: (id: string) => Side | undefined,
   changed: ReadonlySet<string>,
-): Record<string, Side> {
-  const out: Record<string, Side> = {};
+  stored: ReadonlySet<string> = new Set(),
+): Record<string, Side | null> {
+  const out: Record<string, Side | null> = {};
   for (const c of curves) {
     if (c.attach !== 'residual' || !(changed.has(c.from) || changed.has(c.to))) continue;
+    if (!stored.has(c.from) && !stored.has(c.to)) {
+      out[c.id] = null;
+      continue;
+    }
     const a = residualSideOf(c.from);
     if (a && a === residualSideOf(c.to)) out[c.id] = a;
   }

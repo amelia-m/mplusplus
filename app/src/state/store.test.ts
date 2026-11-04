@@ -456,6 +456,14 @@ describe('rotation and residual sides (Amelia, 2026-11-03)', () => {
     expect(useStore.getState().curveSides).toEqual({});
   });
 
+  it('puts a curve that followed its residuals back on the layout side when both go back to the default', () => {
+    setup();
+    useStore.getState().setResidualSides(['a', 'b'], 'left');
+    useStore.getState().setResidualSides(['a', 'b'], null);
+    expect(useStore.getState().residualSides).toEqual({});
+    expect(useStore.getState().curveSides).toEqual({});
+  });
+
   it('sets and clears residual sides for several nodes at once, adding nothing for a no-op', () => {
     setup();
     useStore.getState().setResidualSides(['a', 'b'], 'left');

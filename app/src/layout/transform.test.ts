@@ -161,6 +161,30 @@ describe('curveSidesFollowingResiduals', () => {
   ];
   it('moves a curve between residual tails to the side both its residuals now share, and leaves the rest', () => {
     const sides: Record<string, 'left' | 'right'> = { a: 'left', b: 'left', z: 'right', x: 'left', y: 'left' };
-    expect(curveSidesFollowingResiduals(curves, (id) => sides[id], new Set(['a', 'b']))).toEqual({ c1: 'left' });
+    const stored = new Set(['a', 'b']);
+    expect(curveSidesFollowingResiduals(curves, (id) => sides[id], new Set(['a', 'b']), stored)).toEqual({ c1: 'left' });
+  });
+
+  it('clears the stored side of a curve whose residuals are both back on the layout default', () => {
+    const layoutSides: Record<string, 'left' | 'right'> = { a: 'left', b: 'right' };
+    expect(curveSidesFollowingResiduals(curves, (id) => layoutSides[id], new Set(['a', 'b']), new Set())).toEqual({
+      c1: null,
+      c2: null,
+    });
+  });
+});
+
+describe('turning boxes of mixed sizes', () => {
+  it('adds no overlaps when wide boxes and round latents are stacked close together', () => {
+    const positions: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    ['f1', 'f2', 'f3'].forEach((id, i) => (positions[id] = box(0, i * 90, 80, 80)));
+    ['y1', 'y2', 'y3'].forEach((id, i) => (positions[id] = box(200, i * 66, 120, 56)));
+    const r = transformGroup({ ids: Object.keys(positions), positions, residualSides: {}, curves: [] }, 'rotate-cw');
+    const bs = Object.values(r.positions);
+    for (let i = 0; i < bs.length; i++)
+      for (let j = i + 1; j < bs.length; j++) {
+        const [a, b] = [bs[i], bs[j]];
+        expect(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).toBe(false);
+      }
   });
 });

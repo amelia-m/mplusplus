@@ -26,20 +26,25 @@ export function arrangeTargets(
   return allIds;
 }
 
-export function arrangeSelected(op: TransformOp): void {
-  // Like undo, a rotation waits for a drag or scrub to end, so it never lands inside one.
-  if (isGestureActive()) return;
+/** Rotate or flip; false when it waited out a drag or scrub in progress (like undo, it never lands inside one). */
+export function arrangeSelected(op: TransformOp): boolean {
+  if (isGestureActive()) return false;
   const { graph, selection, edgeSelection, transformNodes } = useStore.getState();
-  if (!graph) return;
+  if (!graph) return true;
   transformNodes(arrangeTargets(selection, edgeSelection, graph.edges, graph.nodes.map((n) => n.id)), op);
+  return true;
 }
 
-/** Add everything the selected factors measure to the selection; false when that adds nothing. */
-export function selectBlocks(): boolean {
+export type SelectBlocksResult = 'added' | 'no-selection' | 'no-factor' | 'complete';
+
+/** Add everything the selected factors measure to the selection, and say what happened. */
+export function selectBlocks(): SelectBlocksResult {
   const { graph, selection, setSelection } = useStore.getState();
-  if (!graph || selection.size === 0) return false;
+  if (!graph || selection.size === 0) return 'no-selection';
+  const latents = new Set(graph.nodes.filter((n) => n.kind === 'latent').map((n) => n.id));
+  if (![...selection].some((id) => latents.has(id))) return 'no-factor';
   const grown = withIndicators(graph, selection);
-  if (grown.size === selection.size) return false;
+  if (grown.size === selection.size) return 'complete';
   setSelection(grown);
-  return true;
+  return 'added';
 }
