@@ -42,7 +42,7 @@ describe('autosave', () => {
   });
 
   it('restores the graph from the saved text, with the saved layout, positions, styles and p-values', () => {
-    const r = restoreSession(session());
+    const r = restoreSession(session(), 'sem');
     expect(r.graph.nodes.map((n) => n.id).sort()).toEqual(buildGraph(parseDgm(text)).nodes.map((n) => n.id).sort());
     expect(r.layout).toEqual(layout);
     expect(r.slice).toEqual(slice);
@@ -52,7 +52,7 @@ describe('autosave', () => {
     const withNodes = (nodes: unknown[]) => {
       const s = session();
       s.layout = { ...s.layout, nodes: nodes as typeof layout.nodes };
-      return restoreSession(s).layout;
+      return restoreSession(s, 'sem').layout;
     };
     const [first, ...rest] = layout.nodes;
     expect(withNodes(rest)).toBeNull(); // a node missing (ids changed)
@@ -62,14 +62,22 @@ describe('autosave', () => {
     expect(withNodes([first, first, ...rest])).toBeNull(); // a node twice
     const s = session();
     s.layout = { ...s.layout, edges: [...s.layout.edges, { id: 'ON:gone->away' }] };
-    expect(restoreSession(s).layout).toBeNull();
+    expect(restoreSession(s, 'sem').layout).toBeNull();
+  });
+
+  it('lays out again, without the saved boxes, a diagram saved with another engine (ELK, dropped)', () => {
+    const r = restoreSession({ ...session(), engine: 'elk-layered' }, 'sem');
+    expect(r.layout).toBeNull();
+    expect(r.slice.positions).toBeUndefined();
+    expect(r.slice.residualSides).toEqual({}); // its residual sides went with its boxes
+    expect(r.slice.edgeStyles).toEqual(slice.edgeStyles); // styles still come back
   });
 
   it('fills global style fields added since the save with their defaults', () => {
     const old = session();
     const { decimals } = old.slice.global;
     old.slice = { ...old.slice, global: { decimals } as typeof old.slice.global };
-    expect(restoreSession(old).slice.global).toEqual({ ...DEFAULT_GLOBAL_STYLE, decimals: 2 });
+    expect(restoreSession(old, 'sem').slice.global).toEqual({ ...DEFAULT_GLOBAL_STYLE, decimals: 2 });
   });
 
   it('reads nothing from missing, malformed or other-version data', () => {

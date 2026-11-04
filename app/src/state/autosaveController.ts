@@ -74,7 +74,8 @@ export class AutosaveController {
   private lastSaved: SaveState | null = null;
   /** Bumped by every write attempt and restore, so a make-room retry can tell it has been overtaken. */
   private generation = 0;
-  private discarded = false;
+  /** Set by Discard or `stop`: this page saves nothing more. */
+  private stopped = false;
 
   constructor(private readonly deps: AutosaveDeps) {}
 
@@ -111,7 +112,7 @@ export class AutosaveController {
    * again after freeing space.
    */
   save(input: SaveInput): SaveResult {
-    if (!this.tabId || this.discarded) return 'not-started';
+    if (!this.tabId || this.stopped) return 'not-started';
     if (this.lastSaved && sameSaveState(this.lastSaved, input.state)) return 'unchanged';
     this.generation++;
     const ok = saveSession(this.deps.storage, slotKey(this.tabId), this.toSession(input));
@@ -129,10 +130,10 @@ export class AutosaveController {
    * work over newer work or brings a discarded diagram back.
    */
   async makeRoomAndSave(input: SaveInput): Promise<SaveResult> {
-    if (!this.tabId || this.discarded) return 'not-started';
+    if (!this.tabId || this.stopped) return 'not-started';
     const generation = this.generation;
     const open = await openTabIds(this.deps.locks);
-    if (this.discarded || generation !== this.generation) return 'unchanged';
+    if (this.stopped || generation !== this.generation) return 'unchanged';
     if (!open) return 'refused';
     const key = slotKey(this.tabId);
     const json = JSON.stringify(this.toSession(input));
@@ -160,9 +161,19 @@ export class AutosaveController {
     this.lastSaved = state;
   }
 
+  /**
+   * Save nothing more in this page, leaving the slot as it is: after a
+   * restore that failed part way, so the half-restored state on screen
+   * never overwrites the saved diagram, which a fixed version of the app
+   * can still restore.
+   */
+  stop(): void {
+    this.stopped = true;
+  }
+
   /** Delete this tab's slot, and save nothing more in this page (it reloads next). No other slot is touched. */
   discard(): void {
-    this.discarded = true;
+    this.stopped = true;
     if (this.tabId) clearSession(this.deps.storage, slotKey(this.tabId));
     this.lastSaved = null;
   }
