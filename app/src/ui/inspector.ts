@@ -220,7 +220,7 @@ function buildNodePanel(ids: string[], redraw: Redraw): Row<NodeStyle> {
 // ----------------- residual panel -----------------
 
 const RESIDUAL_SIDES: [ResidualSideChoice, string][] = [
-  ['', 'Auto (layout)'],
+  ['', 'Layout default'],
   ['top', 'Top'],
   ['right', 'Right'],
   ['bottom', 'Bottom'],

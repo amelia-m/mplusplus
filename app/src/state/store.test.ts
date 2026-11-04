@@ -447,6 +447,15 @@ describe('rotation and residual sides (Amelia, 2026-11-03)', () => {
     expect(useStore.getState().residualSides.a).toBe('bottom');
   });
 
+  it('moves a covariance curve drawn between residual tails along with its residuals, in the same undo entry', () => {
+    setup();
+    useStore.getState().setResidualSides(['a', 'b'], 'left');
+    expect(useStore.getState().curveSides).toEqual({ 'WITH:a->b': 'left' });
+    expect(past()).toBe(1);
+    temporal.getState().undo();
+    expect(useStore.getState().curveSides).toEqual({});
+  });
+
   it('sets and clears residual sides for several nodes at once, adding nothing for a no-op', () => {
     setup();
     useStore.getState().setResidualSides(['a', 'b'], 'left');

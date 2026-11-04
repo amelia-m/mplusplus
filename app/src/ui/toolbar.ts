@@ -12,6 +12,8 @@ import { redoHistory, undoHistory } from '../state/history.js';
 export interface ToolbarHooks {
   onRedraw(): void;
   onRelayout(): void;
+  /** Show a short message (a toast). */
+  onMessage(text: string): void;
 }
 
 export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
@@ -76,9 +78,9 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
       titled(make('Flip ↔', 'btn', arrange('flip-h')), 'Flip left to right (the selection, or the whole diagram)'),
       titled(make('Flip ↕', 'btn', arrange('flip-v')), 'Flip top to bottom (the selection, or the whole diagram)'),
       titled(make('Select block', 'btn', () => {
-        selectBlocks();
-        hooks.onRedraw();
-      }), "Add each selected factor's indicators to the selection"),
+        if (selectBlocks()) hooks.onRedraw();
+        else hooks.onMessage('Select a factor first: Select block adds what it measures.');
+      }), 'Add everything the selected factors measure (indicators, and first-order factors of a second-order one) to the selection'),
     ),
     group(
       'History',

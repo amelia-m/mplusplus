@@ -150,7 +150,7 @@ function relayout(): void {
     });
 }
 
-mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout });
+mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout, onMessage: (text) => toast(text) });
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);

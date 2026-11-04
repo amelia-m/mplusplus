@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { temporal } from 'zundo';
 import type { ModelGraph, GraphEdge, GraphNode } from '../model/graph.js';
 import type { LayoutResult, Side } from '../layout/index.js';
-import { transformGroup, type TransformOp } from '../layout/transform.js';
+import { curveSidesFollowingResiduals, transformGroup, type TransformOp } from '../layout/transform.js';
 import {
   DEFAULT_GLOBAL_STYLE,
   type EdgeStyleOverride,
@@ -297,15 +297,28 @@ export const useStore = create<AppState & AppActions>()(
       },
 
       setResidualSides(ids, side) {
-        const cur = get().residualSides;
+        const { residualSides: cur, layout, graph, curveSides } = get();
         let next: Record<string, Side> | null = null;
+        const changed = new Set<string>();
         for (const id of ids) {
           if (side === null ? !Object.hasOwn(cur, id) : cur[id] === side) continue;
           next ??= { ...cur };
           if (side === null) delete next[id];
           else next[id] = side;
+          changed.add(id);
         }
-        if (next) set({ residualSides: next });
+        if (!next) return;
+        // Curves drawn between residual tails follow their residuals.
+        const sides = next;
+        const layoutSide = new Map((layout?.residuals ?? []).map((r) => [r.id, r.side]));
+        const ends = new Map((graph?.edges ?? []).map((e) => [e.id, e]));
+        const curves = (layout?.edges ?? []).flatMap((e) => {
+          const edge = ends.get(e.id);
+          return e.curve && edge ? [{ id: e.id, from: edge.from, to: edge.to, attach: e.curve.attach }] : [];
+        });
+        const follow = curveSidesFollowingResiduals(curves, (id) => sides[id] ?? layoutSide.get(id), changed);
+        const nextCurves = Object.keys(follow).length > 0 ? { ...curveSides, ...follow } : curveSides;
+        set({ residualSides: sides, curveSides: nextCurves });
       },
 
       transformNodes(ids, op) {

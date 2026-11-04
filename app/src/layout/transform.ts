@@ -30,15 +30,23 @@ export function transformSide(side: Side, op: TransformOp): Side {
   }
 }
 
-/** `p` after `op` around `pivot`, on screen (y down): clockwise turns right of up. */
-export function transformPoint(p: Point, pivot: Point, op: TransformOp): Point {
+/**
+ * `p` after `op` around `pivot`, on screen (y down): clockwise turns right
+ * of up. A turn swaps the axes, but boxes stay wider than tall, so offsets
+ * that become horizontal are stretched by `aspect` (box width over height)
+ * and those that become vertical shrink by it; otherwise indicators
+ * stacked a box height apart would overlap side by side. The stretch
+ * undoes itself, so four quarter turns, or a turn and its opposite, come
+ * back exactly.
+ */
+export function transformPoint(p: Point, pivot: Point, op: TransformOp, aspect = 1): Point {
   const dx = p.x - pivot.x;
   const dy = p.y - pivot.y;
   switch (op) {
     case 'rotate-cw':
-      return { x: pivot.x - dy, y: pivot.y + dx };
+      return { x: pivot.x - dy * aspect, y: pivot.y + dx / aspect };
     case 'rotate-ccw':
-      return { x: pivot.x + dy, y: pivot.y - dx };
+      return { x: pivot.x + dy * aspect, y: pivot.y - dx / aspect };
     case 'flip-h':
       return { x: pivot.x - dx, y: p.y };
     case 'flip-v':
@@ -46,13 +54,15 @@ export function transformPoint(p: Point, pivot: Point, op: TransformOp): Point {
   }
 }
 
-/** Center of the bounding box of `boxes`. */
-export function boxesCenter(boxes: NodePosition[]): Point {
-  const left = Math.min(...boxes.map((b) => b.x));
-  const top = Math.min(...boxes.map((b) => b.y));
-  const right = Math.max(...boxes.map((b) => b.x + b.width));
-  const bottom = Math.max(...boxes.map((b) => b.y + b.height));
-  return { x: (left + right) / 2, y: (top + bottom) / 2 };
+/**
+ * The point a group turns around: the center of the bounding box of the
+ * box centers. Unlike the boxes' own bounding box, it stays put under
+ * every turn and flip, even when boxes differ in size.
+ */
+export function groupPivot(boxes: NodePosition[]): Point {
+  const xs = boxes.map((b) => b.x + b.width / 2);
+  const ys = boxes.map((b) => b.y + b.height / 2);
+  return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
 }
 
 export interface TransformInput {
@@ -74,18 +84,21 @@ export interface TransformResult {
 }
 
 /**
- * Turn the nodes `input.ids` by `op` around the center of their bounding
- * box. A curve turns only when both its ends do; one reaching outside the
- * group keeps its side.
+ * Turn the nodes `input.ids` by `op` around their pivot (`groupPivot`),
+ * with the spacing stretched by the boxes' average aspect (see
+ * `transformPoint`). A curve turns only when both its ends do; one
+ * reaching outside the group keeps its side.
  */
 export function transformGroup(input: TransformInput, op: TransformOp): TransformResult {
   const ids = new Set([...input.ids].filter((id) => input.positions[id]));
   const result: TransformResult = { positions: {}, residualSides: {}, curveSides: {} };
   if (ids.size === 0) return result;
-  const pivot = boxesCenter([...ids].map((id) => input.positions[id]));
+  const boxes = [...ids].map((id) => input.positions[id]);
+  const pivot = groupPivot(boxes);
+  const aspect = boxes.reduce((n, b) => n + b.width, 0) / boxes.reduce((n, b) => n + b.height, 0);
   for (const id of ids) {
     const b = input.positions[id];
-    const c = transformPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, pivot, op);
+    const c = transformPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, pivot, op, aspect);
     result.positions[id] = { ...b, x: c.x - b.width / 2, y: c.y - b.height / 2 };
     const side = input.residualSides[id];
     if (side) result.residualSides[id] = transformSide(side, op);
@@ -97,14 +110,45 @@ export function transformGroup(input: TransformInput, op: TransformOp): Transfor
 }
 
 /**
- * `ids` plus every observed indicator of each latent among them (its BY
- * targets), so selecting a factor selects its measurement block.
+ * `ids` plus everything each latent among them measures, through BY: its
+ * indicators, and for a second-order factor its first-order factors and
+ * theirs, so selecting a factor selects its whole measurement block. An
+ * indicator that also loads on another factor comes along too.
  */
 export function withIndicators(graph: ModelGraph, ids: Iterable<string>): Set<string> {
   const out = new Set(ids);
-  const observed = new Set(graph.nodes.filter((n) => n.kind === 'observed').map((n) => n.id));
+  const measures = new Map<string, string[]>();
   for (const e of graph.edges) {
-    if (e.kind === 'BY' && out.has(e.from) && observed.has(e.to)) out.add(e.to);
+    if (e.kind === 'BY') measures.set(e.from, [...(measures.get(e.from) ?? []), e.to]);
+  }
+  const queue = [...out];
+  while (queue.length > 0) {
+    for (const to of measures.get(queue.pop()!) ?? []) {
+      if (!out.has(to)) {
+        out.add(to);
+        queue.push(to);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * New sides for covariance curves drawn between residual tails, after the
+ * residuals of `changed` moved: a curve with a changed end bulges to the
+ * side both its residuals now share. When its two residuals point
+ * different ways it keeps its side (no single bulge would suit both).
+ */
+export function curveSidesFollowingResiduals(
+  curves: Array<{ id: string; from: string; to: string; attach: 'node' | 'residual' }>,
+  residualSideOf: (id: string) => Side | undefined,
+  changed: ReadonlySet<string>,
+): Record<string, Side> {
+  const out: Record<string, Side> = {};
+  for (const c of curves) {
+    if (c.attach !== 'residual' || !(changed.has(c.from) || changed.has(c.to))) continue;
+    const a = residualSideOf(c.from);
+    if (a && a === residualSideOf(c.to)) out[c.id] = a;
   }
   return out;
 }
