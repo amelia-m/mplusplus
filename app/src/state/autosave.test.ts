@@ -11,6 +11,7 @@ import {
   listSlots,
   loadSession,
   readSession,
+  restoredPositions,
   restoreSession,
   sameSaveState,
   saveSession,
@@ -31,6 +32,7 @@ const slice = {
 const session = () => toSession('syn_sem.dgm', text, 'sem', layout, slice, new Date('2026-11-03T10:00:00Z'));
 
 const KEY = slotKey('tab-a');
+const box = (x: number, y: number) => ({ x, y, width: 120, height: 56 });
 
 describe('autosave', () => {
   it('saves a session and loads the same one back', () => {
@@ -66,10 +68,23 @@ describe('autosave', () => {
   it('keeps the saved positions of surviving nodes when a same-engine layout no longer fits', () => {
     const s = session();
     s.layout = { ...s.layout, nodes: s.layout.nodes.slice(1) }; // ids changed: the layout cannot be reused
-    s.slice = { ...s.slice, positions: { ...s.slice.positions, gone: { x: 1, y: 2, width: 3, height: 4 } } };
+    s.slice = {
+      ...s.slice,
+      positions: {
+        ...s.slice.positions,
+        gone: { x: 1, y: 2, width: 3, height: 4 },
+        // JSON turns NaN into null; a box like this must not survive into the new layout.
+        fb: { x: null as unknown as number, y: 2, width: 3, height: 4 },
+      },
+    };
     const r = restoreSession(s, 'sem');
     expect(r.layout).toBeNull();
-    expect(r.slice.positions).toEqual(slice.positions); // fa kept, the vanished node dropped
+    expect(r.slice.positions).toEqual(slice.positions); // fa kept; the vanished node and fb's broken box dropped
+  });
+
+  it('lays restored positions over the fresh layout, so a node new since the save keeps its fresh box', () => {
+    const fresh = { fa: box(0, 0), added: box(5, 5) };
+    expect(restoredPositions(fresh, { fa: box(10, 20) })).toEqual({ fa: box(10, 20), added: box(5, 5) });
   });
 
   it('lays out again, without the saved boxes, a diagram saved with another engine (ELK, dropped)', () => {
