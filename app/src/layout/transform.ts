@@ -33,20 +33,27 @@ export function transformSide(side: Side, op: TransformOp): Side {
 /**
  * `p` after `op` around `pivot`, on screen (y down): clockwise turns right
  * of up. A turn swaps the axes, but boxes stay wider than tall, so offsets
- * that become horizontal are stretched by `aspect` (box width over height)
- * and those that become vertical shrink by it; otherwise indicators
- * stacked a box height apart would overlap side by side. The stretch
- * undoes itself, so four quarter turns, or a turn and its opposite, come
- * back exactly.
+ * that become horizontal are scaled by `toHorizontal` (box width over
+ * height) and those that become vertical by `toVertical` (height over
+ * width); otherwise indicators stacked a box height apart would overlap
+ * side by side. When `toVertical` is `1 / toHorizontal` (the default, and
+ * what boxes of one size give) the stretch undoes itself, so four quarter
+ * turns, or a turn and its opposite, come back exactly.
  */
-export function transformPoint(p: Point, pivot: Point, op: TransformOp, aspect = 1): Point {
+export function transformPoint(
+  p: Point,
+  pivot: Point,
+  op: TransformOp,
+  toHorizontal = 1,
+  toVertical = 1 / toHorizontal,
+): Point {
   const dx = p.x - pivot.x;
   const dy = p.y - pivot.y;
   switch (op) {
     case 'rotate-cw':
-      return { x: pivot.x - dy * aspect, y: pivot.y + dx / aspect };
+      return { x: pivot.x - dy * toHorizontal, y: pivot.y + dx * toVertical };
     case 'rotate-ccw':
-      return { x: pivot.x + dy * aspect, y: pivot.y - dx / aspect };
+      return { x: pivot.x + dy * toHorizontal, y: pivot.y - dx * toVertical };
     case 'flip-h':
       return { x: pivot.x - dx, y: p.y };
     case 'flip-v':
@@ -85,9 +92,9 @@ export interface TransformResult {
 
 /**
  * Turn the nodes `input.ids` by `op` around their pivot (`groupPivot`),
- * with the spacing stretched by the boxes' average aspect (see
- * `transformPoint`). A curve turns only when both its ends do; one
- * reaching outside the group keeps its side.
+ * with the spacing stretched by the boxes' aspect (see `transformPoint`).
+ * A curve turns only when both its ends do; one reaching outside the group
+ * keeps its side.
  */
 export function transformGroup(input: TransformInput, op: TransformOp): TransformResult {
   const ids = new Set([...input.ids].filter((id) => input.positions[id]));
@@ -95,12 +102,19 @@ export function transformGroup(input: TransformInput, op: TransformOp): Transfor
   if (ids.size === 0) return result;
   const boxes = [...ids].map((id) => input.positions[id]);
   const pivot = groupPivot(boxes);
-  // The widest box over the shortest, so even mixed sizes get enough room
-  // (all sem boxes are the same size today, so this is their own ratio).
-  const aspect = Math.max(...boxes.map((b) => b.width)) / Math.min(...boxes.map((b) => b.height));
+  // Boxes apart by at least the shortest height (or narrowest width) end up
+  // apart by at least the widest width (or tallest height), so mixed sizes
+  // do not overlap in either direction. With mixed sizes the two factors
+  // multiply to more than 1, so a turn and its opposite leave the group a
+  // little more spread out; boxes of one size (all sem boxes today) come
+  // back exactly.
+  const widths = boxes.map((b) => b.width);
+  const heights = boxes.map((b) => b.height);
+  const toHorizontal = Math.max(...widths) / Math.min(...heights);
+  const toVertical = Math.max(...heights) / Math.min(...widths);
   for (const id of ids) {
     const b = input.positions[id];
-    const c = transformPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, pivot, op, aspect);
+    const c = transformPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 }, pivot, op, toHorizontal, toVertical);
     result.positions[id] = { ...b, x: c.x - b.width / 2, y: c.y - b.height / 2 };
     const side = input.residualSides[id];
     if (side) result.residualSides[id] = transformSide(side, op);

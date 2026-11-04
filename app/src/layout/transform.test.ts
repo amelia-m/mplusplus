@@ -6,6 +6,7 @@ import { buildGraph } from '../model/graph.js';
 import { placeSem } from './sem.js';
 import {
   curveSidesFollowingResiduals,
+  groupPivot,
   transformGroup,
   transformPoint,
   transformSide,
@@ -137,18 +138,15 @@ describe('turning keeps groups apart and in place', () => {
     });
   }
 
-  it('keeps its pivot when boxes differ in size, so two quarter turns make a half turn about the same point', () => {
+  it('keeps its pivot when boxes differ in size, through every turn and flip', () => {
     const positions = { big: box(0, 0, 80, 80), small: box(200, 10, 120, 56) };
-    const turn = (p: typeof positions) =>
-      transformGroup({ ids: ['big', 'small'], positions: p, residualSides: {}, curves: [] }, 'rotate-cw').positions as typeof positions;
-    const twice = turn(turn(positions));
-    const flipped = transformGroup({ ids: ['big', 'small'], positions, residualSides: {}, curves: [] }, 'flip-h').positions;
-    const flippedTwice = transformGroup({ ids: ['big', 'small'], positions: flipped, residualSides: {}, curves: [] }, 'flip-v').positions;
-    // A half turn equals flipping both ways.
-    expect(twice.big.x).toBeCloseTo(flippedTwice.big.x);
-    expect(twice.big.y).toBeCloseTo(flippedTwice.big.y);
-    expect(twice.small.x).toBeCloseTo(flippedTwice.small.x);
-    expect(twice.small.y).toBeCloseTo(flippedTwice.small.y);
+    const before = groupPivot(Object.values(positions));
+    expect(before).toEqual({ x: 150, y: 39 }); // box centers (40, 40) and (260, 38)
+    for (const op of ['rotate-cw', 'rotate-ccw', 'flip-h', 'flip-v'] as const) {
+      const after = groupPivot(Object.values(transformGroup({ ids: ['big', 'small'], positions, residualSides: {}, curves: [] }, op).positions));
+      expect(after.x, op).toBeCloseTo(before.x);
+      expect(after.y, op).toBeCloseTo(before.y);
+    }
   });
 });
 
@@ -175,16 +173,29 @@ describe('curveSidesFollowingResiduals', () => {
 });
 
 describe('turning boxes of mixed sizes', () => {
-  it('adds no overlaps when wide boxes and round latents are stacked close together', () => {
-    const positions: Record<string, { x: number; y: number; width: number; height: number }> = {};
-    ['f1', 'f2', 'f3'].forEach((id, i) => (positions[id] = box(0, i * 90, 80, 80)));
-    ['y1', 'y2', 'y3'].forEach((id, i) => (positions[id] = box(200, i * 66, 120, 56)));
-    const r = transformGroup({ ids: Object.keys(positions), positions, residualSides: {}, curves: [] }, 'rotate-cw');
-    const bs = Object.values(r.positions);
+  type Box = { x: number; y: number; width: number; height: number };
+  const overlapping = (positions: Record<string, Box>) => {
+    const bs = Object.values(positions);
+    const pairs: string[] = [];
     for (let i = 0; i < bs.length; i++)
       for (let j = i + 1; j < bs.length; j++) {
         const [a, b] = [bs[i], bs[j]];
-        expect(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).toBe(false);
+        if (a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height) pairs.push(`${i}-${j}`);
       }
+    return pairs;
+  };
+  const turned = (positions: Record<string, Box>) =>
+    transformGroup({ ids: Object.keys(positions), positions, residualSides: {}, curves: [] }, 'rotate-cw').positions;
+
+  it('adds no overlaps when wide boxes and round latents are stacked close together', () => {
+    const positions: Record<string, Box> = {};
+    ['f1', 'f2', 'f3'].forEach((id, i) => (positions[id] = box(0, i * 90, 80, 80)));
+    ['y1', 'y2', 'y3'].forEach((id, i) => (positions[id] = box(200, i * 66, 120, 56)));
+    expect(overlapping(turned(positions))).toEqual([]);
+  });
+
+  it('adds no overlaps when round latents side by side turn to stacked (review of 7556d66: one factor for both directions squeezed them)', () => {
+    const positions = { f1: box(0, 0, 80, 80), f2: box(100, 0, 80, 80), y1: box(0, 200, 120, 56) };
+    expect(overlapping(turned(positions))).toEqual([]);
   });
 });
