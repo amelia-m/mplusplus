@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>mplusplus - Mplus DGM Editor</title>
+    <script>
+      // Apply a remembered Light or Dark choice before the first paint, so
+      // the other theme does not flash (ui/theme.ts owns the choice).
+      try {
+        var t = localStorage.getItem('mplusplus.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
