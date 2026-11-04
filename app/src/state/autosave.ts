@@ -211,6 +211,8 @@ export function restoreSession(session: SavedSession): RestoredSession {
       nodeStyles: s.nodeStyles ?? {},
       global: { ...DEFAULT_GLOBAL_STYLE, ...(s.global ?? {}) },
       pValues: s.pValues ?? {},
+      residualSides: s.residualSides ?? {},
+      curveSides: s.curveSides ?? {},
     },
   };
 }

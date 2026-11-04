@@ -9,7 +9,8 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import type { ModelGraph, GraphEdge, GraphNode } from '../model/graph.js';
-import type { LayoutResult } from '../layout/index.js';
+import type { LayoutResult, Side } from '../layout/index.js';
+import { transformGroup, type TransformOp } from '../layout/transform.js';
 import {
   DEFAULT_GLOBAL_STYLE,
   type EdgeStyleOverride,
@@ -47,6 +48,10 @@ export interface AppState {
   global: GlobalStyle;
   /** P-values attached from a parsed `.out` file, keyed by edge id. */
   pValues: Record<string, PValueEntry>;
+  /** Residual sides chosen by the user or a rotation, by node id; sparse, over the layout's. */
+  residualSides: Record<string, Side>;
+  /** Covariance curve sides set by a rotation, by edge id; sparse, over the layout's. */
+  curveSides: Record<string, Side>;
 }
 
 export interface AppActions {
@@ -68,12 +73,16 @@ export interface AppActions {
   resetStyles(): void;
   setGlobal(patch: Partial<GlobalStyle>): void;
   setPValues(map: Record<string, PValueEntry>): void;
+  /** Put the residuals of `ids` on `side`, or back on the layout's side when `side` is null. */
+  setResidualSides(ids: Iterable<string>, side: Side | null): void;
+  /** Rotate or flip the nodes `ids` around their center, with their residuals and curves (`layout/transform.ts`). */
+  transformNodes(ids: Iterable<string>, op: TransformOp): void;
 }
 
 /** The part of the state that undo/redo tracks. */
 export type HistorySlice = Pick<
   AppState,
-  'positions' | 'edgeStyles' | 'nodeStyles' | 'global' | 'pValues'
+  'positions' | 'edgeStyles' | 'nodeStyles' | 'global' | 'pValues' | 'residualSides' | 'curveSides'
 >;
 
 /** Maximum number of undo entries kept. */
@@ -92,6 +101,8 @@ export function historySlice(s: AppState): HistorySlice {
     nodeStyles: s.nodeStyles,
     global: s.global,
     pValues: s.pValues,
+    residualSides: s.residualSides,
+    curveSides: s.curveSides,
   };
 }
 
@@ -104,7 +115,15 @@ export function historySlice(s: AppState): HistorySlice {
  */
 export function historyEqual(a: HistorySlice, b: HistorySlice): boolean {
   const same = <K extends keyof HistorySlice>(k: K): boolean => a[k] === b[k] || valueEqual(a[k], b[k]);
-  return same('positions') && same('edgeStyles') && same('nodeStyles') && same('global') && same('pValues');
+  return (
+    same('positions') &&
+    same('edgeStyles') &&
+    same('nodeStyles') &&
+    same('global') &&
+    same('pValues') &&
+    same('residualSides') &&
+    same('curveSides')
+  );
 }
 
 /**
@@ -164,6 +183,8 @@ export const useStore = create<AppState & AppActions>()(
       nodeStyles: {},
       global: { ...DEFAULT_GLOBAL_STYLE },
       pValues: {},
+      residualSides: {},
+      curveSides: {},
 
       loadGraph(graph, layout) {
         const positions: Record<string, NodePosition> = {};
@@ -179,6 +200,8 @@ export const useStore = create<AppState & AppActions>()(
           edgeStyles: {},
           nodeStyles: {},
           pValues: {},
+          residualSides: {},
+          curveSides: {},
         });
       },
 
@@ -271,6 +294,37 @@ export const useStore = create<AppState & AppActions>()(
         const cur = get().pValues;
         const pValues = mergeRecord(cur, map);
         if (pValues !== cur) set({ pValues });
+      },
+
+      setResidualSides(ids, side) {
+        const cur = get().residualSides;
+        let next: Record<string, Side> | null = null;
+        for (const id of ids) {
+          if (side === null ? !Object.hasOwn(cur, id) : cur[id] === side) continue;
+          next ??= { ...cur };
+          if (side === null) delete next[id];
+          else next[id] = side;
+        }
+        if (next) set({ residualSides: next });
+      },
+
+      transformNodes(ids, op) {
+        const { layout, positions, residualSides, curveSides } = get();
+        if (!layout) return;
+        const drawnResiduals: Record<string, Side> = {};
+        for (const r of layout.residuals ?? []) drawnResiduals[r.id] = residualSides[r.id] ?? r.side;
+        const edges = new Map((get().graph?.edges ?? []).map((e) => [e.id, e]));
+        const curves = layout.edges.flatMap((e) => {
+          const edge = edges.get(e.id);
+          return e.curve && edge ? [{ id: e.id, from: edge.from, to: edge.to, side: curveSides[e.id] ?? e.curve.side }] : [];
+        });
+        const r = transformGroup({ ids, positions, residualSides: drawnResiduals, curves }, op);
+        if (Object.keys(r.positions).length === 0) return;
+        set({
+          positions: mergeRecord(positions, r.positions),
+          residualSides: { ...residualSides, ...r.residualSides },
+          curveSides: { ...curveSides, ...r.curveSides },
+        });
       },
     }),
     {

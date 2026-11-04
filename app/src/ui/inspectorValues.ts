@@ -6,6 +6,7 @@
  * forced in `svg.ts` (see TODO.md).
  */
 import type { AppState } from '../state/store.js';
+import type { Side } from '../layout/index.js';
 import { computeSignificanceInputs } from '../render/svg.js';
 import {
   effectiveEdgeStyle,
@@ -32,4 +33,21 @@ export function edgeInspectorStyle(s: InspectorSource): EdgeStyle | null {
   const edge = id != null ? s.graph?.edges.find((e) => e.id === id) : undefined;
   if (!edge) return null;
   return effectiveEdgeStyle(s.global, computeSignificanceInputs(edge, s), s.edgeStyles[edge.id]);
+}
+
+/** A residual side as the inspector offers it: '' is the layout's own choice. */
+export type ResidualSideChoice = Side | '';
+
+/** The selected nodes that have a residual drawn, in selection order. */
+export function residualIds(s: Pick<AppState, 'layout'>, selection: ReadonlySet<string>): string[] {
+  const drawn = new Set((s.layout?.residuals ?? []).map((r) => r.id));
+  return [...selection].filter((id) => drawn.has(id));
+}
+
+/**
+ * The side choice to show for `ids`: the first one's stored side, or ''
+ * when the layout decides it (no stored side).
+ */
+export function residualSideChoice(s: Pick<AppState, 'residualSides'>, ids: string[]): ResidualSideChoice {
+  return ids.length > 0 ? (s.residualSides[ids[0]] ?? '') : '';
 }
