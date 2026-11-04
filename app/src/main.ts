@@ -124,6 +124,9 @@ app.innerHTML = `
     </div>
     <aside id="inspector"></aside>
   </main>
+  <footer class="app-credit">
+    Designed by Amelia Miramonti and implemented with Claude Code (Anthropic).
+  </footer>
 `;
 
 const dropzone = document.querySelector<HTMLDivElement>('#dropzone')!;
