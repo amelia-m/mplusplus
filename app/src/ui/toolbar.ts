@@ -15,7 +15,12 @@ export interface ToolbarHooks {
   onEngineChange(name: string): void;
 }
 
-export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
+export interface Toolbar {
+  /** Show `name` as the selected engine, without laying the model out again (a restored diagram's engine). */
+  setEngine(name: string): void;
+}
+
+export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): Toolbar {
   host.innerHTML = '';
   host.classList.add('toolbar');
 
@@ -71,8 +76,14 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
         if (redoHistory()) hooks.onRedraw();
       }),
     ),
-    group('Layout', engineSelect(hooks), make('Re-run layout', 'btn', () => hooks.onRelayout())),
   );
+  const select = engineSelect(hooks);
+  host.append(group('Layout', select, make('Re-run layout', 'btn', () => hooks.onRelayout())));
+  return {
+    setEngine: (name) => {
+      select.value = name;
+    },
+  };
 }
 
 function engineSelect(hooks: ToolbarHooks): HTMLSelectElement {
