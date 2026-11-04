@@ -227,12 +227,57 @@ describe('AutosaveController', () => {
     expect(me.controller.save(input('again.dgm'))).toBe('not-started');
   });
 
-  it('deletes nothing when even every closed slot could not make room for the save', async () => {
-    const { b, me } = await fullBrowser();
+  /** Make `b.storage` refuse a write that would take its total text length past `budget`. */
+  const withBudget = (b: ReturnType<typeof browser>, budget: number) => {
+    const realSet = b.storage.setItem;
+    const used = (except: string) =>
+      [...b.storage.items].reduce((n, [k, v]) => (k === except ? n : n + k.length + v.length), 0);
+    b.storage.setItem = (k, v) => {
+      if (used(k) + k.length + v.length > budget) throw new Error('QuotaExceededError');
+      realSet(k, v);
+    };
+  };
+
+  it('makes room with a closed slot smaller than the save, when the space already free covers the rest', async () => {
+    const b = browser();
+    const small = await b.saving('small.dgm'); // a small diagram in a closed tab
+    b.storage.items.set(slotKey(small.controller.id!), JSON.stringify({ ...JSON.parse(b.storage.getItem(slotKey(small.controller.id!))!), dgmText: 'x' }));
+    b.close(small.controller.id!);
+    const me = b.tab();
+    await me.controller.start();
+    const big = input('big.dgm');
+    const bigSize = JSON.stringify(big).length;
+    // Room for the big save only once the small slot is gone, though that slot is far smaller than the save.
+    withBudget(b, [...b.storage.items].reduce((n, [k, v]) => n + k.length + v.length, 0) + bigSize + 200 - 1000);
+    expect(me.controller.save(big)).toBe('refused');
+    expect(await me.controller.makeRoomAndSave(big)).toBe('saved');
+    expect(names(b)).toEqual(['big.dgm']);
+  });
+
+  it('puts the closed slots back when even all of them do not make room', async () => {
+    const b = browser();
+    const closed = await b.saving('closed.dgm');
+    b.close(closed.controller.id!);
+    const me = b.tab();
+    await me.controller.start();
+    withBudget(b, [...b.storage.items].reduce((n, [k, v]) => n + k.length + v.length, 0) + 100);
     const huge = { ...input('huge.dgm'), dgmText: text.repeat(50) };
     expect(me.controller.save(huge)).toBe('refused');
     expect(await me.controller.makeRoomAndSave(huge)).toBe('refused');
     expect(names(b)).toEqual(['closed.dgm']);
+  });
+
+  it('after stop, saves a newly loaded diagram under a new id and keeps the slot that failed to restore', async () => {
+    const b = browser();
+    const a = await b.saving('broken.dgm');
+    const oldId = a.controller.id!;
+    a.controller.stop();
+    await a.controller.startFresh();
+    expect(a.controller.id).not.toBe(oldId);
+    expect(a.controller.save(input('new.dgm'))).toBe('saved');
+    expect(loadSession(b.storage, slotKey(oldId))?.fileName).toBe('broken.dgm');
+    expect(loadSession(b.storage, slotKey(a.controller.id!))?.fileName).toBe('new.dgm');
+    expect(a.tabStore.getItem(TAB_ID_KEY)).toBe(a.controller.id); // a reload keeps the new id
   });
 
   it('reports a refused save and clears its own slot when no closed slot can make room', async () => {
