@@ -317,9 +317,10 @@ function showNotice(text: string, kind: 'restored' | 'offer' | 'opened'): void {
  * an offer. It comes back as it was, or laid out again when the saved
  * layout no longer fits the graph, with its saved engine. Nothing is
  * written until the next edit, so an opened offer that is never edited
- * leaves no copy. If this tab's own diagram fails to restore, its slot is
- * discarded and the page reloads empty, so a half-restored diagram is
- * neither shown nor saved again; a failed offer only says so.
+ * leaves no copy. If this tab's own diagram fails to restore, its saved
+ * copy is kept and autosave stops for this page, so a half-restored
+ * diagram is never saved over it, with Discard offered; a failed offer
+ * only says so.
  */
 async function restore(session: SavedSession, source: 'own' | 'offered'): Promise<void> {
   try {
@@ -341,8 +342,17 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     else showNotice(`Opened ${session.fileName} from a closed tab (saved ${when}).${how}`, 'opened');
   } catch (err) {
     console.warn('Autosaved diagram could not be restored.', err);
-    if (source === 'own') discardAndReload();
-    else toast(`Could not open ${session.fileName}.`, true);
+    if (source === 'own') {
+      // Keep the saved copy (a later version may restore it) and stop saving
+      // the half-restored state over it; Discard still removes it.
+      autosave?.stop();
+      showNotice(
+        `Could not restore ${session.fileName}. The saved copy is kept, and autosave is off in this tab until it reloads.`,
+        'restored',
+      );
+    } else {
+      toast(`Could not open ${session.fileName}.`, true);
+    }
   }
 }
 

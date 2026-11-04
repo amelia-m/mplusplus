@@ -127,6 +127,14 @@ describe('AutosaveController', () => {
     expect(browser().tab().controller.save(input('a.dgm'))).toBe('not-started');
   });
 
+  it('after stop (a failed restore), keeps the saved diagram and writes nothing over it', async () => {
+    const b = browser();
+    const a = await b.saving('a.dgm');
+    a.controller.stop();
+    expect(a.controller.save(input('half-restored.dgm'))).toBe('not-started');
+    expect(loadSession(b.storage, slotKey(a.controller.id!))?.fileName).toBe('a.dgm');
+  });
+
   it('Discard deletes only its own slot', async () => {
     const b = browser();
     const other = await b.saving('other.dgm');
