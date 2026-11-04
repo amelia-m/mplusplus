@@ -2,6 +2,8 @@
 
 Interactive web application for parsing, laying out, and rendering Mplus `.dgm` diagram files and `.out` model output files to SVG.
 
+mplusplus is an independent project: it is not official, and it is not affiliated with, endorsed by or maintained by Muthén & Muthén, the makers of Mplus.
+
 The application is built as a self-contained static Single Page Application (SPA). It runs in modern web browsers and can open directly from the local filesystem (`file://`) without requiring a backend server.
 
 ## Features
