@@ -1,13 +1,25 @@
 /**
- * Header toolbar: align and distribute the selected nodes, undo and redo
- * (through `state/history.ts`) and re-run the layout.
+ * Header toolbar: align and distribute the selected nodes, rotate or flip
+ * the selection or the whole diagram and grow a selection of factors to
+ * their measurement blocks (`render/arrange.ts`), undo and redo (through
+ * `state/history.ts`) and re-run the layout.
  */
 import { alignSelected, distributeSelected, type AlignMode, type DistributeMode } from '../render/align.js';
+import { arrangeSelected, selectBlocks } from '../render/arrange.js';
+import type { TransformOp } from '../layout/transform.js';
 import { redoHistory, undoHistory } from '../state/history.js';
+
+const SELECT_BLOCK_MESSAGES = {
+  'no-selection': 'Select a factor first: Select block adds what it measures.',
+  'no-factor': 'Select a factor (an ellipse): Select block adds what it measures.',
+  complete: 'The selected factors’ blocks are already selected.',
+} as const;
 
 export interface ToolbarHooks {
   onRedraw(): void;
   onRelayout(): void;
+  /** Show a short message (a toast). */
+  onMessage(text: string): void;
 }
 
 export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
@@ -26,6 +38,14 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
   const align = (mode: AlignMode) => () => {
     alignSelected(mode);
     hooks.onRedraw();
+  };
+  const arrange = (op: TransformOp) => () => {
+    if (arrangeSelected(op)) hooks.onRedraw();
+    else hooks.onMessage('Finish the drag first, then rotate or flip.');
+  };
+  const titled = (btn: HTMLButtonElement, title: string): HTMLButtonElement => {
+    btn.title = title;
+    return btn;
   };
   const distribute = (mode: DistributeMode) => () => {
     distributeSelected(mode);
@@ -56,6 +76,18 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
       'Distribute',
       make('Horizontal', 'btn', distribute('horizontal')),
       make('Vertical', 'btn', distribute('vertical')),
+    ),
+    group(
+      'Arrange',
+      titled(make('Rotate ↺', 'btn', arrange('rotate-ccw')), 'Rotate 90° counter-clockwise (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Rotate ↻', 'btn', arrange('rotate-cw')), 'Rotate 90° clockwise (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Flip ↔', 'btn', arrange('flip-h')), 'Flip left to right (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Flip ↕', 'btn', arrange('flip-v')), 'Flip top to bottom (the selected boxes, else the ends of the selected edges, else the whole diagram)'),
+      titled(make('Select block', 'btn', () => {
+        const result = selectBlocks();
+        if (result === 'added') hooks.onRedraw();
+        else hooks.onMessage(SELECT_BLOCK_MESSAGES[result]);
+      }), 'Add everything the selected factors measure (indicators, and first-order factors of a second-order one) to the selection'),
     ),
     group(
       'History',

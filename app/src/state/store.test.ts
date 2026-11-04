@@ -247,7 +247,15 @@ describe('gesture history robustness (R1)', () => {
   it('shares one history slice and equality with the temporal options', () => {
     const s = useStore.getState();
     const slice = historySlice(s);
-    expect(Object.keys(slice).sort()).toEqual(['edgeStyles', 'global', 'nodeStyles', 'pValues', 'positions']);
+    expect(Object.keys(slice).sort()).toEqual([
+      'curveSides',
+      'edgeStyles',
+      'global',
+      'nodeStyles',
+      'pValues',
+      'positions',
+      'residualSides',
+    ]);
     s.setSelection(['a']);
     expect(historyEqual(slice, historySlice(useStore.getState()))).toBe(true);
     s.setNodePosition('a', pos(77));
@@ -380,5 +388,91 @@ describe('empty style overrides are never stored (F2.7)', () => {
   it('keeps an override whose value equals the default, since it pins the value', () => {
     useStore.getState().setNodeStyles(['a'], { shape: null });
     expect(useStore.getState().nodeStyles).toEqual({ a: { shape: null } });
+  });
+});
+
+describe('rotation and residual sides (Amelia, 2026-11-03)', () => {
+  // A factor f above two indicators; layout residuals: f on top, a and b below.
+  // A covariance a-b bulging down.
+  const setup = () => {
+    useStore.setState({
+      graph: {
+        nodes: [
+          { id: 'f', label: 'f', kind: 'latent', level: 0, residual: null },
+          { id: 'a', label: 'a', kind: 'observed', level: -1, residual: null },
+          { id: 'b', label: 'b', kind: 'observed', level: -1, residual: null },
+        ],
+        edges: [{ id: 'WITH:a->b', from: 'a', to: 'b', kind: 'WITH', label: '' }],
+        source: {} as never,
+      } as never,
+      layout: {
+        nodes: [],
+        edges: [{ id: 'WITH:a->b', curve: { side: 'bottom', attach: 'residual' } }],
+        residuals: [
+          { id: 'f', side: 'top' },
+          { id: 'a', side: 'bottom' },
+          { id: 'b', side: 'bottom' },
+        ],
+        width: 0,
+        height: 0,
+      },
+      positions: { f: pos(40, 0), a: pos(0, 100), b: pos(160, 100) },
+      residualSides: {},
+      curveSides: {},
+    });
+    temporal.getState().clear();
+  };
+
+  it('rotates nodes with their residual and curve sides as one undo entry, and undo puts everything back', () => {
+    setup();
+    const before = useStore.getState().positions;
+    useStore.getState().transformNodes(['f', 'a', 'b'], 'rotate-cw');
+    const s = useStore.getState();
+    expect(past()).toBe(1);
+    expect(s.residualSides).toEqual({ f: 'right', a: 'left', b: 'left' });
+    expect(s.curveSides).toEqual({ 'WITH:a->b': 'left' });
+    // The factor, above its indicators before, is now to their right.
+    expect(s.positions.f.x).toBeGreaterThan(s.positions.a.x);
+    expect(s.positions.a.x).toBe(s.positions.b.x);
+    temporal.getState().undo();
+    expect(useStore.getState().positions).toEqual(before);
+    expect(useStore.getState().residualSides).toEqual({});
+    expect(useStore.getState().curveSides).toEqual({});
+  });
+
+  it('turns a residual side the user already set, not the layout side', () => {
+    setup();
+    useStore.getState().setResidualSides(['a'], 'right');
+    useStore.getState().transformNodes(['a'], 'rotate-cw');
+    expect(useStore.getState().residualSides.a).toBe('bottom');
+  });
+
+  it('moves a covariance curve drawn between residual tails along with its residuals, in the same undo entry', () => {
+    setup();
+    useStore.getState().setResidualSides(['a', 'b'], 'left');
+    expect(useStore.getState().curveSides).toEqual({ 'WITH:a->b': 'left' });
+    expect(past()).toBe(1);
+    temporal.getState().undo();
+    expect(useStore.getState().curveSides).toEqual({});
+  });
+
+  it('puts a curve that followed its residuals back on the layout side when both go back to the default', () => {
+    setup();
+    useStore.getState().setResidualSides(['a', 'b'], 'left');
+    useStore.getState().setResidualSides(['a', 'b'], null);
+    expect(useStore.getState().residualSides).toEqual({});
+    expect(useStore.getState().curveSides).toEqual({});
+  });
+
+  it('sets and clears residual sides for several nodes at once, adding nothing for a no-op', () => {
+    setup();
+    useStore.getState().setResidualSides(['a', 'b'], 'left');
+    expect(useStore.getState().residualSides).toEqual({ a: 'left', b: 'left' });
+    expect(past()).toBe(1);
+    useStore.getState().setResidualSides(['a', 'b'], 'left');
+    expect(past()).toBe(1);
+    useStore.getState().setResidualSides(['a'], null);
+    expect(useStore.getState().residualSides).toEqual({ b: 'left' });
+    expect(past()).toBe(2);
   });
 });

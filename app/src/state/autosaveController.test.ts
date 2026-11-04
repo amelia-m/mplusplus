@@ -12,7 +12,7 @@ import { fakeBrowser, ids, memoryStorage } from './autosaveFakes.js';
 
 const text = readFileSync(join(resolve(__dirname, '../../../dgm'), 'syn_path.dgm'), 'utf8');
 const layout = placeSem(buildGraph(parseDgm(text)), 120, 56);
-const slice = { positions: {}, edgeStyles: {}, nodeStyles: {}, global: DEFAULT_GLOBAL_STYLE, pValues: {} };
+const slice = { positions: {}, edgeStyles: {}, nodeStyles: {}, global: DEFAULT_GLOBAL_STYLE, pValues: {}, residualSides: {}, curveSides: {} };
 const state = (file = {}): SaveState => ({ file, engine: 'sem', layout, slice });
 const input = (fileName: string, s = state()) => ({ fileName, dgmText: text, state: s });
 

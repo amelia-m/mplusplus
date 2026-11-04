@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { edgeInspectorStyle, nodeInspectorStyle, type InspectorSource } from './inspectorValues.js';
+import {
+  edgeInspectorStyle,
+  nodeInspectorStyle,
+  residualIds,
+  residualSideChoice,
+  type InspectorSource,
+} from './inspectorValues.js';
 import {
   DEFAULT_GLOBAL_STYLE,
   DEFAULT_NODE_STYLE_LATENT,
@@ -84,5 +90,17 @@ describe('inspector shows the effective style (Z5)', () => {
   it('returns null with nothing selected or an unknown id', () => {
     expect(nodeInspectorStyle(source())).toBeNull();
     expect(edgeInspectorStyle(source({ edgeSelection: new Set(['ON:q->r']) }))).toBeNull();
+  });
+});
+
+describe('residual side choice', () => {
+  const layout = { residuals: [{ id: 'a', side: 'right' as const }, { id: 'b', side: 'right' as const }] };
+  it('offers the side control only for selected nodes that have a residual drawn', () => {
+    expect(residualIds({ layout } as never, new Set(['f', 'a', 'b']))).toEqual(['a', 'b']);
+    expect(residualIds({ layout: null }, new Set(['a']))).toEqual([]);
+  });
+  it("shows the first one's stored side, or Auto when the layout decides", () => {
+    expect(residualSideChoice({ residualSides: { a: 'left' } }, ['a', 'b'])).toBe('left');
+    expect(residualSideChoice({ residualSides: { b: 'left' } }, ['a', 'b'])).toBe('');
   });
 });

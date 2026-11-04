@@ -37,7 +37,8 @@ import type { TabChannel } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
-import type { LayoutResult, NodeLayout } from './layout/index.js';
+import type { LayoutResult } from './layout/index.js';
+import { mergeLayout } from './layout/merge.js';
 import type { Selection } from 'd3-selection';
 
 registerLayoutEngine(semEngine);
@@ -152,7 +153,7 @@ function relayout(): void {
     });
 }
 
-mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout });
+mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout, onMessage: (text) => toast(text) });
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);
@@ -442,7 +443,7 @@ function installGraph(graph: ModelGraph, layout: LayoutResult, slice?: Partial<H
 function redraw(): void {
   const s = useStore.getState();
   if (!s.graph || !s.layout) return;
-  const merged = mergeLayout(s.layout, s.positions);
+  const merged = mergeLayout(s.layout, s);
   const state: RenderState = {
     graph: s.graph,
     layout: merged,
@@ -469,7 +470,7 @@ function redraw(): void {
 function fitViewBox(overlay?: OverlayGeometry): void {
   if (isGestureActive()) return;
   const s = useStore.getState();
-  const merged = s.layout ? mergeLayout(s.layout, s.positions) : null;
+  const merged = s.layout ? mergeLayout(s.layout, s) : null;
   const boxes = merged?.nodes ?? [];
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
   if (merged && s.graph) {
@@ -483,13 +484,3 @@ function fitViewBox(overlay?: OverlayGeometry): void {
   svg.setAttribute('viewBox', formatViewBox(widenToFit(placed.viewBox, placed.at.x, textWidth)));
 }
 
-function mergeLayout(
-  layout: LayoutResult,
-  positions: Record<string, { x: number; y: number; width: number; height: number }>,
-): LayoutResult {
-  const nodes: NodeLayout[] = layout.nodes.map((n) => {
-    const p = positions[n.id];
-    return p ? { ...n, ...p } : n;
-  });
-  return { ...layout, nodes };
-}

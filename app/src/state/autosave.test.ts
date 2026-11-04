@@ -28,6 +28,8 @@ const slice = {
   nodeStyles: {},
   global: { ...DEFAULT_GLOBAL_STYLE, decimals: 2 },
   pValues: { 'BY:fa->a1': { unstd: 0.01, stdyx: 0.02 } },
+  residualSides: { a1: 'left' as const },
+  curveSides: {},
 };
 const session = () => toSession('syn_sem.dgm', text, 'sem', layout, slice, new Date('2026-11-03T10:00:00Z'));
 
@@ -99,6 +101,7 @@ describe('autosave', () => {
     const r = restoreSession({ ...session(), engine: 'elk-layered' }, 'sem');
     expect(r.layout).toBeNull();
     expect(r.slice.positions).toBeUndefined();
+    expect(r.slice.residualSides).toEqual({}); // its residual sides went with its boxes
     expect(r.slice.edgeStyles).toEqual(slice.edgeStyles); // styles still come back
   });
 

@@ -26,7 +26,13 @@ import {
   type StrokeStyle,
   type ArrowheadStyle,
 } from '../render/styles.js';
-import { edgeInspectorStyle, nodeInspectorStyle } from './inspectorValues.js';
+import {
+  edgeInspectorStyle,
+  nodeInspectorStyle,
+  residualIds,
+  residualSideChoice,
+  type ResidualSideChoice,
+} from './inspectorValues.js';
 import { parseNumberInput, type NumberSpec } from './numberInput.js';
 import { formatNumber, wireLiveSlider } from './liveSlider.js';
 
@@ -68,7 +74,8 @@ export function mountInspector(host: HTMLElement, redraw: Redraw): void {
       (s.nodeStyles !== prev.nodeStyles ||
         s.edgeStyles !== prev.edgeStyles ||
         s.global !== prev.global ||
-        s.pValues !== prev.pValues)
+        s.pValues !== prev.pValues ||
+        s.residualSides !== prev.residualSides)
     ) {
       sync(s);
     }
@@ -110,6 +117,12 @@ function buildInspector(host: HTMLElement, redraw: Redraw): Sync {
       const style = nodeInspectorStyle(s);
       if (style) panel.set(style);
     });
+    const withResidual = residualIds(useStore.getState(), selection);
+    if (withResidual.length > 0) {
+      const residuals = buildResidualPanel(withResidual, redraw);
+      host.append(residuals.el);
+      syncs.push((s) => residuals.set(residualSideChoice(s, withResidual)));
+    }
   }
   if (edgeSelection.size > 0) {
     const panel = buildEdgePanel(Array.from(edgeSelection), redraw);
@@ -202,6 +215,25 @@ function buildNodePanel(ids: string[], redraw: Redraw): Row<NodeStyle> {
       (s) => s.labelFontColor,
     ),
   ]);
+}
+
+// ----------------- residual panel -----------------
+
+const RESIDUAL_SIDES: [ResidualSideChoice, string][] = [
+  ['', 'Layout default'],
+  ['top', 'Top'],
+  ['right', 'Right'],
+  ['bottom', 'Bottom'],
+  ['left', 'Left'],
+];
+
+/** Which side the selected variables' residuals go on, for all of them at once (Amelia, 2026-11-03). */
+function buildResidualPanel(ids: string[], redraw: Redraw): Row<ResidualSideChoice> {
+  const side = selectRow('Side', RESIDUAL_SIDES, (v) => {
+    useStore.getState().setResidualSides(ids, v === '' ? null : v);
+    redraw();
+  });
+  return panelOf(`Residuals (${ids.length})`, [side]);
 }
 
 // ----------------- edge panel -----------------
