@@ -13,6 +13,7 @@ import {
   effectiveEdgeStyle,
   effectiveNodeStyle,
   activeEstimate,
+  nodeLabelText,
   strokeDashArray,
   type EdgeStyle,
   type NodeShape,
@@ -23,8 +24,18 @@ import {
   type SignificanceInputs,
 } from './styles.js';
 import { isSignificant, type SignificanceSource } from '../model/significance.js';
-import { boundaryPoint } from './geometry.js';
-import { overlayGeometry, type CurveGeometry, type OverlayGeometry } from './residual.js';
+import { boundaryPoint, type Box } from './geometry.js';
+import { overlayGeometry, quadraticAt, type CurveGeometry, type OverlayGeometry } from './residual.js';
+import {
+  estimateTextWidth,
+  placeLabels,
+  pointOnPath,
+  type LabelPath,
+  type Obstacles,
+  type Placement,
+  type PlacedLabel,
+  type Segment,
+} from './labelPlacement.js';
 import type { CaptionPlacement } from '../ui/viewBox.js';
 
 const NODE_W = 120;
@@ -148,11 +159,164 @@ export function renderGraph(
 
   const shapeOf = nodeShapeLookup(state.graph, state.nodeStyles);
   const overlay = overlayGeometry(state.layout, state.graph.edges, shapeOf, ARROW_GAP);
-  renderEdges(edgesG, defsG, state, nodeIndex, shapeOf, overlay);
-  renderResiduals(edgesG, defsG, state, overlay);
+  const geoms = edgeGeometries(state, nodeIndex, shapeOf, overlay);
+  const { offsets } = diagramLabels(state, geoms, overlay);
+  renderEdges(edgesG, defsG, state, geoms, offsets);
+  renderResiduals(edgesG, defsG, state, overlay, offsets);
   renderNodes(nodesG, state);
-  // Returned so the view fit uses the same geometry without recomputing it.
-  return overlay;
+  // Returned so the view fit uses the same geometry without recomputing it,
+  // with residual values where they were drawn.
+  return withMovedResidualValues(overlay, offsets);
+}
+
+// ----------------- label collision pass -----------------
+
+/** Font size of residual values, and of an edge's constraint label. */
+const RESIDUAL_FONT_SIZE = 12;
+const CONSTRAINT_FONT_SIZE = 10;
+/** Baseline of an edge's value label above its path point, and of its constraint label below. */
+const EDGE_LABEL_RISE = 6;
+const CONSTRAINT_DROP = 10;
+/** Baseline of a residual value below its anchor. */
+const RESIDUAL_BASELINE = 4;
+/** Length of an arrowhead marker along its path, and half its width. */
+const ARROWHEAD_LENGTH = 9;
+const ARROWHEAD_HALF_WIDTH = 4.5;
+/** Pieces a curve is cut into when it is an obstacle. */
+const CURVE_SEGMENTS = 16;
+
+/** Label ids in the collision pass: an edge's value label, a node's residual value. */
+export const edgeLabelId = (edgeId: string): string => `edge:${edgeId}`;
+export const residualLabelId = (nodeId: string): string => `res:${nodeId}`;
+
+/** A text line's box, its baseline at `y`, ascent 0.8 and descent 0.2 of the size. */
+function textBox(text: string, fontSize: number, anchorX: number, y: number, anchor: 'start' | 'middle' | 'end'): Box {
+  const width = estimateTextWidth(text, fontSize);
+  const x = anchor === 'start' ? anchorX : anchor === 'end' ? anchorX - width : anchorX - width / 2;
+  return { x, y: y - 0.8 * fontSize, width, height: fontSize };
+}
+
+function union(p: Box, q: Box): Box {
+  const x = Math.min(p.x, q.x);
+  const y = Math.min(p.y, q.y);
+  return { x, y, width: Math.max(p.x + p.width, q.x + q.width) - x, height: Math.max(p.y + p.height, q.y + q.height) - y };
+}
+
+/** Box an arrowhead takes at `tip`, its path arriving from `from`. */
+export function arrowheadBox(tip: Point, from: Point): Box {
+  const len = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
+  const back = { x: tip.x - ((tip.x - from.x) / len) * ARROWHEAD_LENGTH, y: tip.y - ((tip.y - from.y) / len) * ARROWHEAD_LENGTH };
+  const x = Math.min(tip.x, back.x) - ARROWHEAD_HALF_WIDTH;
+  const y = Math.min(tip.y, back.y) - ARROWHEAD_HALF_WIDTH;
+  return {
+    x,
+    y,
+    width: Math.abs(tip.x - back.x) + 2 * ARROWHEAD_HALF_WIDTH,
+    height: Math.abs(tip.y - back.y) + 2 * ARROWHEAD_HALF_WIDTH,
+  };
+}
+
+/** A path as segments, a curve cut into `CURVE_SEGMENTS` pieces. */
+function pathSegments(path: LabelPath, owner: string): Segment[] {
+  const pts =
+    path.kind === 'polyline'
+      ? path.points
+      : Array.from({ length: CURVE_SEGMENTS + 1 }, (_, i) => quadraticAt(path.a, path.control, path.b, i / CURVE_SEGMENTS));
+  return pts.slice(1).map((b, i) => ({ a: pts[i], b, owner }));
+}
+
+/** The text of a node's residual value in the active coefficient mode, '' with none. */
+export function residualText(node: GraphNode | undefined, g: Pick<GlobalStyle, 'coefMode' | 'decimals'>): string {
+  const r = node?.residual;
+  const est = g.coefMode === 'stdyx' ? (r?.stdyx ?? r?.unstd) : (r?.unstd ?? r?.stdyx);
+  return est ? est.value.toFixed(g.decimals) : '';
+}
+
+/** The labels drawn, their obstacles, and where the pass puts them. */
+export interface DiagramLabels {
+  labels: PlacedLabel[];
+  obstacles: Obstacles;
+  /** Offsets by label id (`edgeLabelId`, `residualLabelId`); all zero with the pass off. */
+  offsets: Map<string, Point>;
+  /** Path parameter of each value label the pass placed; empty with the pass off. */
+  t: Map<string, number>;
+  /** Labels the pass could not clear; empty with the pass off. */
+  unresolved: string[];
+}
+
+/**
+ * The value labels and residual values drawn for `state`, the boxes and
+ * paths they must keep off, and their offsets: from `placeLabels` when
+ * `avoidLabelOverlaps` is on, none when it is off. Hidden labels take no part.
+ */
+function diagramLabels(state: RenderState, geoms: readonly EdgeGeom[], overlay: OverlayGeometry): DiagramLabels {
+  const labels: PlacedLabel[] = [];
+  const boxes: Box[] = state.layout.nodes.map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height }));
+  const segments: Segment[] = [];
+
+  for (const d of geoms) {
+    const id = edgeLabelId(d.edge.id);
+    segments.push(...pathSegments(d.line, id));
+    if (d.style.arrowhead !== 'none') {
+      const [first, second, beforeLast, last] =
+        d.line.kind === 'quadratic'
+          ? [d.line.a, d.line.control, d.line.control, d.line.b]
+          : [d.line.points[0], d.line.points[1], d.line.points[d.line.points.length - 2], d.line.points[d.line.points.length - 1]];
+      boxes.push(arrowheadBox(last, beforeLast));
+      if (isSymmetricKind(d.edge.kind)) boxes.push(arrowheadBox(first, second));
+    }
+    let rel: Box | null = d.showLabel ? textBox(d.labelText, d.style.labelFontSize, 0, -EDGE_LABEL_RISE, 'middle') : null;
+    if (d.edge.constraint) {
+      const c = textBox(`(${d.edge.constraint})`, CONSTRAINT_FONT_SIZE, 0, CONSTRAINT_DROP, 'middle');
+      rel = rel ? union(rel, c) : c;
+    }
+    if (rel) labels.push({ kind: 'path', id, path: d.line, t0: d.t0, rel });
+  }
+
+  const nodes = new Map(state.graph.nodes.map((n) => [n.id, n]));
+  for (const [nodeId, r] of overlay.residuals) {
+    const id = residualLabelId(nodeId);
+    segments.push({ a: r.tail, b: r.tip, owner: id });
+    boxes.push(arrowheadBox(r.tip, r.tail));
+    const text = residualText(nodes.get(nodeId), state.global);
+    if (!state.global.showCoefficients || text.length === 0) continue;
+    const len = Math.hypot(r.tail.x - r.tip.x, r.tail.y - r.tip.y) || 1;
+    labels.push({
+      kind: 'residual',
+      id,
+      anchor: r.labelAnchor,
+      dir: { x: (r.tail.x - r.tip.x) / len, y: (r.tail.y - r.tip.y) / len },
+      rel: textBox(text, RESIDUAL_FONT_SIZE, 0, RESIDUAL_BASELINE, r.textAnchor),
+    });
+  }
+
+  const obstacles = { boxes, segments };
+  if (!state.global.avoidLabelOverlaps) {
+    return { labels, obstacles, offsets: new Map(labels.map((l) => [l.id, { x: 0, y: 0 }])), t: new Map(), unresolved: [] };
+  }
+  const placed: Placement = placeLabels(labels, obstacles);
+  return { labels, obstacles, offsets: placed.offsets, t: placed.t, unresolved: placed.unresolved };
+}
+
+/**
+ * The labels of the diagram `state` draws, as `renderGraph` places them, for
+ * tests and any caller that needs label positions without the DOM.
+ */
+export function computeDiagramLabels(state: RenderState): DiagramLabels {
+  const nodeIndex = new Map(state.layout.nodes.map((n) => [n.id, n]));
+  const shapeOf = nodeShapeLookup(state.graph, state.nodeStyles);
+  const overlay = overlayGeometry(state.layout, state.graph.edges, shapeOf, ARROW_GAP);
+  return diagramLabels(state, edgeGeometries(state, nodeIndex, shapeOf, overlay), overlay);
+}
+
+function withMovedResidualValues(overlay: OverlayGeometry, offsets: Map<string, Point>): OverlayGeometry {
+  const residuals = new Map(
+    Array.from(overlay.residuals, ([id, r]) => {
+      const o = offsets.get(residualLabelId(id));
+      return [id, o ? { ...r, labelAnchor: { x: r.labelAnchor.x + o.x, y: r.labelAnchor.y + o.y } } : r] as const;
+    }),
+  );
+  return { ...overlay, residuals };
 }
 
 /** Each node's outline, its style override applied; `rect` for an unknown id. */
@@ -177,8 +341,10 @@ function renderResiduals(
   defsG: Selection<SVGDefsElement, unknown, null, undefined>,
   state: RenderState,
   overlay: OverlayGeometry,
+  offsets: Map<string, Point>,
 ): void {
   const layer = edgesG.selectAll<SVGGElement, null>('g.residuals').data([null]).join('g').attr('class', 'residuals');
+  const moved = (id: string): Point => offsets.get(residualLabelId(id)) ?? { x: 0, y: 0 };
   const color = '#111111';
   const marker = `url(#${ensureArrowMarker(defsG, 'default', color)})`;
   const nodes = new Map(state.graph.nodes.map((n) => [n.id, n]));
@@ -198,18 +364,14 @@ function renderResiduals(
     .attr('stroke-width', 1)
     .attr('marker-end', marker);
   g.select<SVGTextElement>('text')
-    .attr('x', (d) => d.geom.labelAnchor.x)
-    .attr('y', (d) => d.geom.labelAnchor.y + 4)
+    .attr('x', (d) => d.geom.labelAnchor.x + moved(d.id).x)
+    .attr('y', (d) => d.geom.labelAnchor.y + moved(d.id).y + RESIDUAL_BASELINE)
     .attr('text-anchor', (d) => d.geom.textAnchor)
     .attr('font-family', 'system-ui, sans-serif')
-    .attr('font-size', 12)
+    .attr('font-size', RESIDUAL_FONT_SIZE)
     .attr('fill', color)
     .attr('display', state.global.showCoefficients ? null : 'none')
-    .text((d) => {
-      const r = nodes.get(d.id)?.residual;
-      const est = state.global.coefMode === 'stdyx' ? (r?.stdyx ?? r?.unstd) : (r?.unstd ?? r?.stdyx);
-      return est ? est.value.toFixed(state.global.decimals) : '';
-    });
+    .text((d) => residualText(nodes.get(d.id), state.global));
 }
 
 function renderNodes(nodesG: GroupSelection, state: RenderState): void {
@@ -252,7 +414,7 @@ function renderNodes(nodesG: GroupSelection, state: RenderState): void {
       .attr('font-family', style.labelFontFamily)
       .attr('font-size', style.labelFontSize)
       .attr('fill', style.labelFontColor)
-      .text(d.label);
+      .text(nodeLabelText(d, style));
 
     g.classed('selected', state.nodeSelection.has(d.id));
   });
@@ -324,16 +486,24 @@ interface EdgeGeom {
   bend: Point[];
   /** Set when the layout draws this edge as a covariance curve. */
   curve: CurveGeometry | null;
+  /** SVG path data. */
+  d: string;
+  /** The drawn line, for the value label to slide along. */
+  line: LabelPath;
+  /** Where on `line` the value label sits with no collision pass. */
+  t0: number;
+  style: EdgeStyle;
+  labelText: string;
+  showLabel: boolean;
 }
 
-function renderEdges(
-  edgesG: GroupSelection,
-  defsG: Selection<SVGDefsElement, unknown, null, undefined>,
+/** Each edge's drawn path, effective style and value label, for edges whose ends are laid out. */
+function edgeGeometries(
   state: RenderState,
   index: Map<string, NodeLayout>,
   shapeOf: (id: string) => NodeShape,
   overlay: OverlayGeometry,
-): void {
+): EdgeGeom[] {
   const layoutEdges = new Map(state.layout.edges.map((e) => [e.id, e]));
   const geoms: EdgeGeom[] = [];
   for (const edge of state.graph.edges) {
@@ -341,17 +511,33 @@ function renderEdges(
     const target = index.get(edge.to);
     if (!source || !target) continue;
     const lay = layoutEdges.get(edge.id);
-    geoms.push({
+    const curve = overlay.curves.get(edge.id) ?? null;
+    const base = {
       edge,
       source,
       target,
       sourceShape: shapeOf(edge.from),
       targetShape: shapeOf(edge.to),
       bend: lay?.bend ?? [],
-      curve: overlay.curves.get(edge.id) ?? null,
-    });
+      curve,
+    };
+    const drawn = curve
+      ? { d: curve.d, line: { kind: 'quadratic', a: curve.a, control: curve.control, b: curve.b } as const, t0: 0.5 }
+      : computePath(base);
+    const style = effectiveEdgeStyle(state.global, computeSignificanceInputs(edge, state), state.edgeStyles[edge.id]);
+    const labelText = formatLabel(edge, state.global, style);
+    geoms.push({ ...base, ...drawn, style, labelText, showLabel: edgeLabelShown(edge, state.global, style, labelText) });
   }
+  return geoms;
+}
 
+function renderEdges(
+  edgesG: GroupSelection,
+  defsG: Selection<SVGDefsElement, unknown, null, undefined>,
+  state: RenderState,
+  geoms: EdgeGeom[],
+  offsets: Map<string, Point>,
+): void {
   const join = edgesG
     .selectAll<SVGGElement, EdgeGeom>('g.edge')
     .data(geoms, (d) => d.edge.id);
@@ -379,9 +565,10 @@ function renderEdges(
     const label = sel.select<SVGTextElement>('text.edge-label');
     const constraint = sel.select<SVGTextElement>('text.edge-constraint');
 
-    const { d: pathD, mid } = d.curve ?? computePath(d);
-    const sigInputs = computeSignificanceInputs(d.edge, state);
-    const style = effectiveEdgeStyle(state.global, sigInputs, state.edgeStyles[d.edge.id]);
+    const { d: pathD, style } = d;
+    const base = pointOnPath(d.line, d.t0);
+    const off = offsets.get(edgeLabelId(d.edge.id)) ?? { x: 0, y: 0 };
+    const mid = { x: base.x + off.x, y: base.y + off.y };
     // Covariances are two-headed and drawn in their own style, solid by
     // default (docs/diagram-conventions.md D3).
     const twoHeaded = isSymmetricKind(d.edge.kind);
@@ -403,11 +590,10 @@ function renderEdges(
       .attr('marker-end', marker);
     hit.attr('d', pathD);
 
-    const labelText = formatLabel(d.edge, state.global, style);
-    const showLabel = edgeLabelShown(d.edge, state.global, style, labelText);
+    const { labelText, showLabel } = d;
     label
       .attr('x', mid.x)
-      .attr('y', mid.y - 6)
+      .attr('y', mid.y - EDGE_LABEL_RISE)
       .attr('text-anchor', 'middle')
       .attr('font-family', style.labelFontFamily)
       .attr('font-size', style.labelFontSize)
@@ -417,10 +603,10 @@ function renderEdges(
 
     constraint
       .attr('x', mid.x)
-      .attr('y', mid.y + 10)
+      .attr('y', mid.y + CONSTRAINT_DROP)
       .attr('text-anchor', 'middle')
       .attr('font-family', 'system-ui, sans-serif')
-      .attr('font-size', 10)
+      .attr('font-size', CONSTRAINT_FONT_SIZE)
       .attr('font-style', 'italic')
       .attr('fill', '#6b7280')
       .text(d.edge.constraint ? `(${d.edge.constraint})` : '');
@@ -497,7 +683,14 @@ export function edgeLabelShown(
   return g.showCovarianceLabels || !isSymmetricKind(edge.kind);
 }
 
-function computePath(g: EdgeGeom): { d: string; mid: Point } {
+/**
+ * A straight or bent edge's path data and drawn line (start, bend points,
+ * end: each piece is straight), with the value label's default parameter:
+ * halfway along a straight edge, at the middle bend point of a bent one.
+ */
+function computePath(
+  g: Pick<EdgeGeom, 'edge' | 'source' | 'target' | 'sourceShape' | 'targetShape' | 'bend'>,
+): { d: string; line: LabelPath; t0: number } {
   const sCenter: Point = { x: g.source.x + g.source.width / 2, y: g.source.y + g.source.height / 2 };
   const tCenter: Point = { x: g.target.x + g.target.width / 2, y: g.target.y + g.target.height / 2 };
   const startAnchor = g.bend[0] ?? tCenter;
@@ -529,12 +722,17 @@ function computePath(g: EdgeGeom): { d: string; mid: Point } {
     segs.push(`L ${end.x} ${end.y}`);
   }
 
-  const mid: Point =
-    g.bend.length > 0
-      ? g.bend[Math.floor(g.bend.length / 2)]
-      : { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const points = [start, ...g.bend, end];
+  let t0 = 0.5;
+  if (g.bend.length > 0) {
+    // The middle bend point's share of the line's length.
+    const lengths = points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y));
+    const total = lengths.reduce((s, l) => s + l, 0);
+    const upTo = lengths.slice(0, Math.floor(g.bend.length / 2) + 1).reduce((s, l) => s + l, 0);
+    t0 = total > 0 ? upTo / total : 0.5;
+  }
 
-  return { d: segs.join(' '), mid };
+  return { d: segs.join(' '), line: { kind: 'polyline', points }, t0 };
 }
 
 export const NODE_DIMENSIONS = { width: NODE_W, height: NODE_H };

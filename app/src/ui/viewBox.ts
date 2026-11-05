@@ -3,9 +3,9 @@
  * edge bend points plus padding, so nodes dragged or laid out beyond the
  * initial area, and edges routed outside the nodes, stay visible.
  *
- * `main.ts` refits after every change. That fit policy (when to fit, whether
- * to zoom past 1:1, whether edits may shrink or re-centre the view) awaits a
- * decision; see "Canvas fit policy" in TODO.md.
+ * This content box is recomputed on every redraw: it is what a fit shows
+ * and what an export draws. What the canvas shows (zoom and pan, and when it
+ * fits) is `render/zoom.ts`.
  */
 import type { Point } from '../layout/index.js';
 
@@ -92,9 +92,9 @@ const CAPTION_MIN_FONT = 14;
 const CAPTION_WIDTHS_PER_FONT = 70;
 
 /**
- * Place `lines` lines of caption under the content. The canvas scales the
- * view to fit, so a fixed font size would be unreadable on a wide diagram:
- * the size follows the view's width.
+ * Place `lines` lines of caption under the content. A fit and an export
+ * scale the content to the canvas or the page, so a fixed font size would be
+ * unreadable on a wide diagram: the size follows the content's width.
  */
 export function placeCaption(vb: ViewBox, lines: number): CaptionPlacement {
   const fontSize = Math.max(CAPTION_MIN_FONT, vb.width / CAPTION_WIDTHS_PER_FONT);

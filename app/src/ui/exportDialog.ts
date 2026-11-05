@@ -26,6 +26,17 @@ const KIND_NOTES: Record<ExportKind, string> = {
 };
 
 /**
+ * The warning the dialog shows while the visible block is hidden for a PDF,
+ * or null: a PDF made through print carries no metadata, so without the
+ * block it has no record of its source (Amelia, 2026-11-04: hiding it is
+ * allowed, with a warning). SVG and PNG keep the record in the file.
+ */
+export function pdfProvenanceWarning(kind: ExportKind, choices: Pick<ExportChoices, 'showVisible'>): string | null {
+  if (kind !== 'pdf' || choices.showVisible) return null;
+  return 'With the provenance hidden, this PDF will carry no record of its source. Tick the box above to keep it.';
+}
+
+/**
  * Open the dialog for `kind`. `source` is null when no diagram is loaded:
  * then `onMessage` says so and nothing opens.
  */
@@ -72,6 +83,16 @@ export function openExportDialog(kind: ExportKind, source: ExportSource | null, 
     );
   };
 
+  const warning = document.createElement('p');
+  warning.className = 'export-warning';
+  warning.setAttribute('role', 'status');
+  const showWarning = () => {
+    const text = pdfProvenanceWarning(kind, choices);
+    warning.textContent = text ?? '';
+    warning.hidden = text === null;
+  };
+  showWarning();
+
   const buttons = document.createElement('div');
   buttons.className = 'export-buttons';
   const cancel = document.createElement('button');
@@ -101,7 +122,9 @@ export function openExportDialog(kind: ExportKind, source: ExportSource | null, 
     }),
     checkbox('Show the provenance on the diagram', choices.showVisible, (v) => {
       choices.showVisible = v;
+      showWarning();
     }),
+    warning,
     buttons,
   );
   dialog.addEventListener('close', () => dialog.remove());

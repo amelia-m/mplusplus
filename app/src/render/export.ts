@@ -12,6 +12,7 @@
  */
 import { version as packageVersion } from '../../package.json';
 import { DEFAULT_VIEWBOX, formatViewBox, placeCaption, widenToFit, type ViewBox } from '../ui/viewBox.js';
+import type { DisplayNamePair } from './styles.js';
 
 /** The app's version, from `package.json` at build time. */
 export const APP_VERSION: string = packageVersion;
@@ -32,6 +33,8 @@ export interface ExportSource {
   weights: string[];
   /** Whether a `.out` file's p-values are attached. */
   outAttached: boolean;
+  /** The renamed variables (`displayNamePairs` in `styles.ts`); none when absent. */
+  displayNames?: DisplayNamePair[];
   /** Defaults to `APP_VERSION`. */
   appVersion?: string;
 }
@@ -58,6 +61,8 @@ export interface ProvenanceRecord {
   /** The weight captions joined, or `none`. */
   weight: string;
   outAttached: boolean;
+  /** Variables drawn under a display name, with their Mplus names; absent when none is renamed. */
+  displayNames?: DisplayNamePair[];
 }
 
 /** One provenance field: a key for metadata, a label for people, a value. */
@@ -81,6 +86,7 @@ export interface ProvenanceInput {
   coefficientMode: CoefficientMode;
   weights: string[];
   outAttached: boolean;
+  displayNames?: DisplayNamePair[];
 }
 
 export function buildProvenance(input: ProvenanceInput, choices: Pick<ExportChoices, 'includeFileName'>): ProvenanceRecord {
@@ -93,7 +99,13 @@ export function buildProvenance(input: ProvenanceInput, choices: Pick<ExportChoi
     outAttached: input.outAttached,
   };
   if (choices.includeFileName) record.sourceFile = input.fileName;
+  if (input.displayNames && input.displayNames.length > 0) record.displayNames = input.displayNames.map((p) => ({ ...p }));
   return record;
+}
+
+/** The renamed variables as `display name (mplus name)`, joined with `; `. */
+export function formatDisplayNames(pairs: readonly DisplayNamePair[]): string {
+  return pairs.map((p) => `${p.displayName} (${p.mplusName})`).join('; ');
 }
 
 const COEFFICIENT_LABELS: Record<CoefficientMode, string> = {
@@ -113,12 +125,32 @@ export function provenanceEntries(record: ProvenanceRecord): ProvenanceEntry[] {
     { key: 'weight', label: 'Weight', value: record.weight },
     { key: 'out-attached', label: '.out attached', value: record.outAttached ? 'yes' : 'no' },
   );
+  if (record.displayNames && record.displayNames.length > 0) {
+    entries.push({ key: 'display-names', label: 'Display names', value: formatDisplayNames(record.displayNames) });
+  }
   return entries;
 }
 
-/** The visible block's lines. */
+/** Display-name pairs per visible line, so many renamed variables do not make one line that widens the export. */
+const DISPLAY_NAMES_PER_LINE = 4;
+
+/**
+ * The visible block's lines. Display names wrap over several lines, a few
+ * pairs each; the metadata keeps them in one entry.
+ */
 export function provenanceLines(record: ProvenanceRecord): string[] {
-  return provenanceEntries(record).map((e) => `${e.label}: ${e.value}`);
+  const lines: string[] = [];
+  for (const e of provenanceEntries(record)) {
+    if (e.key !== 'display-names' || !record.displayNames) {
+      lines.push(`${e.label}: ${e.value}`);
+      continue;
+    }
+    for (let i = 0; i < record.displayNames.length; i += DISPLAY_NAMES_PER_LINE) {
+      const chunk = formatDisplayNames(record.displayNames.slice(i, i + DISPLAY_NAMES_PER_LINE));
+      lines.push(i === 0 ? `${e.label}: ${chunk}` : `  ${chunk}`);
+    }
+  }
+  return lines;
 }
 
 export function escapeXml(text: string): string {
@@ -351,6 +383,7 @@ export async function provenanceFor(source: ExportSource, choices: Pick<ExportCh
       coefficientMode: source.coefficientMode,
       weights: source.weights,
       outAttached: source.outAttached,
+      displayNames: source.displayNames,
     },
     choices,
   );

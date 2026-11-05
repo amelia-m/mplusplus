@@ -5,7 +5,7 @@ import { parseDgm } from '../parser/dgm.js';
 import { outToDgm } from '../parser/outModel.js';
 import { buildGraph } from '../model/graph.js';
 import { placeSem } from '../layout/sem.js';
-import { DEFAULT_GLOBAL_STYLE } from '../render/styles.js';
+import { DEFAULT_GLOBAL_STYLE, effectiveNodeStyle, nodeLabelText } from '../render/styles.js';
 import {
   clearSession,
   LEGACY_KEY,
@@ -126,6 +126,20 @@ describe('autosave', () => {
     const { decimals } = old.slice.global;
     old.slice = { ...old.slice, global: { decimals } as typeof old.slice.global };
     expect(restoreSession(old, 'sem').slice.global).toEqual({ ...DEFAULT_GLOBAL_STYLE, decimals: 2 });
+  });
+
+  it('restores a node style saved before display names existed, drawing the Mplus name, and keeps a saved display name', () => {
+    const storage = memoryStorage();
+    const old = { ...session(), slice: { ...slice, nodeStyles: { fa: { fill: '#ffffff' } } } };
+    saveSession(storage, KEY, old);
+    const r = restoreSession(loadSession(storage, KEY)!, 'sem');
+    const fa = r.graph.nodes.find((n) => n.id === 'fa')!;
+    expect(r.slice.nodeStyles).toEqual({ fa: { fill: '#ffffff' } });
+    expect(nodeLabelText(fa, effectiveNodeStyle(fa, r.slice.nodeStyles?.fa))).toBe(fa.label);
+    const renamed = { ...session(), slice: { ...slice, nodeStyles: { fa: { displayName: 'Anxiety' } } } };
+    saveSession(storage, KEY, renamed);
+    const back = restoreSession(loadSession(storage, KEY)!, 'sem');
+    expect(nodeLabelText(fa, effectiveNodeStyle(fa, back.slice.nodeStyles?.fa))).toBe('Anxiety');
   });
 
   it('reads nothing from missing, malformed or other-version data', () => {

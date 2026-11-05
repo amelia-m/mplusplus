@@ -18,6 +18,11 @@
   --notice: #eff6ff;
   --notice-border: #bfdbfe;
   --notice-fg: #1e3a8a;
+  /* A notice or note that warns (a .out that may be from another model, a
+     PDF exported without its provenance). */
+  --warn: #fffbeb;
+  --warn-border: #f59e0b;
+  --warn-fg: #78350f;
   /* The diagram's sheet: white in both themes, since the diagram's colors
      are the user's styles and what an export shows. */
   --canvas: #ffffff;
@@ -48,6 +53,9 @@
     --notice: #172554;
     --notice-border: #1e40af;
     --notice-fg: #dbeafe;
+    --warn: #3a2a05;
+    --warn-border: #b45309;
+    --warn-fg: #fde68a;
   }
 }
 
@@ -71,6 +79,9 @@
   --notice: #172554;
   --notice-border: #1e40af;
   --notice-fg: #dbeafe;
+  --warn: #3a2a05;
+  --warn-border: #b45309;
+  --warn-fg: #fde68a;
 }
 
 * { box-sizing: border-box; }
@@ -288,6 +299,12 @@ html, body {
 
 .notice[hidden] { display: none; }
 
+.notice.warning {
+  background: var(--warn);
+  border-color: var(--warn-border);
+  color: var(--warn-fg);
+}
+
 .main-area {
   flex: 1;
   min-height: 0;
@@ -457,12 +474,53 @@ g.edge.selected path.edge-path {
   margin: 4px 0;
 }
 
+.export-warning {
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: var(--warn);
+  border: 1px solid var(--warn-border);
+  border-radius: 4px;
+  color: var(--warn-fg);
+}
+
+.export-warning[hidden] { display: none; }
+
 .export-buttons {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
   margin-top: 10px;
 }
+
+/* Open recent (ui/recentMenu.ts): a drop-down under its toolbar button. */
+.recent-menu { position: relative; }
+.recent-menu-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 4px;
+  min-width: 280px;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.recent-menu-panel[hidden] { display: none; }
+.recent-menu-panel ul { list-style: none; margin: 0; padding: 0; }
+.recent-menu-panel li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  font-size: 12px;
+}
+.recent-menu-panel li + li { border-top: 1px solid var(--border); }
+.recent-menu-text { flex: 1; overflow-wrap: anywhere; }
+.recent-menu-empty { margin: 4px; font-size: 12px; color: var(--muted); }
 
 #print-sheet { display: none; }
 
