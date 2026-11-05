@@ -404,7 +404,7 @@ function renderEdges(
     hit.attr('d', pathD);
 
     const labelText = formatLabel(d.edge, state.global, style);
-    const showLabel = state.global.showCoefficients && style.labelVisible && labelText.length > 0;
+    const showLabel = edgeLabelShown(d.edge, state.global, style, labelText);
     label
       .attr('x', mid.x)
       .attr('y', mid.y - 6)
@@ -456,14 +456,45 @@ function mapSource(g: GlobalStyle['pSource']): SignificanceSource {
   return 'auto';
 }
 
-function formatLabel(edge: GraphEdge, g: GlobalStyle, style: EdgeStyle): string {
+/**
+ * An edge's label text in the active coefficient mode: the estimate, then
+ * the SE in parentheses when `showSE` is on, then the 95% limits in square
+ * brackets when `showCI` is on and the estimate has them, as in
+ * `0.81 (0.04) [0.72, 0.89]`. A fixed parameter (no SE, or SE 0) shows its
+ * value alone; an edge with no estimate shows its `@` value, else nothing.
+ */
+export function formatLabel(
+  edge: GraphEdge,
+  g: Pick<GlobalStyle, 'decimals' | 'coefMode' | 'showSE' | 'showCI'>,
+  style: Pick<EdgeStyle, 'decimals'>,
+): string {
   const decimals = style.decimals ?? g.decimals;
+  const fmt = (v: number): string => v.toFixed(decimals);
   const est = activeEstimate(edge, g.coefMode);
   if (!est) {
-    if (edge.fixed != null) return edge.fixed.toFixed(decimals);
+    if (edge.fixed != null) return fmt(edge.fixed);
     return '';
   }
-  return est.value.toFixed(decimals);
+  const parts = [fmt(est.value)];
+  const free = Number.isFinite(est.se) && est.se !== 0;
+  if (free && g.showSE) parts.push(`(${fmt(est.se)})`);
+  if (free && g.showCI && est.ci) parts.push(`[${fmt(est.ci.lower)}, ${fmt(est.ci.upper)}]`);
+  return parts.join(' ');
+}
+
+/**
+ * Whether an edge's value label is drawn: coefficients shown, the edge's
+ * label not hidden by its style, covariance labels not hidden for a
+ * WITH / COVAR edge, and some text to draw.
+ */
+export function edgeLabelShown(
+  edge: Pick<GraphEdge, 'kind'>,
+  g: Pick<GlobalStyle, 'showCoefficients' | 'showCovarianceLabels'>,
+  style: Pick<EdgeStyle, 'labelVisible'>,
+  text: string,
+): boolean {
+  if (!g.showCoefficients || !style.labelVisible || text.length === 0) return false;
+  return g.showCovarianceLabels || !isSymmetricKind(edge.kind);
 }
 
 function computePath(g: EdgeGeom): { d: string; mid: Point } {

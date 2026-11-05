@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
-import { buildGraph, matchEdgeForRow } from './graph.js';
+import { buildGraph, hasConfidenceLimits, matchEdgeForRow } from './graph.js';
 
 const DGM_DIR = resolve(__dirname, '../../../dgm');
 const fixtures = readdirSync(DGM_DIR).filter((f) => f.endsWith('.dgm'));
@@ -83,6 +83,59 @@ describe('buildGraph - syn_sem.dgm', () => {
     expect(graph.edges.some((e) => e.kind === 'WITH' && e.from === 'c4' && e.to === 'b4')).toBe(true);
     const covar = graph.edges.filter((e) => e.kind === 'COVAR');
     expect(covar.map((e) => [e.from, e.to].sort().join('|'))).toEqual(['x1|x2']);
+  });
+
+  it('puts code-2 and code-12 values on covariance edges (WITH / COVAR edges never carried estimates)', () => {
+    const c4b4 = graph.edges.find((e) => e.id === 'WITH:c4->b4')!;
+    expect(c4b4.unstd).toEqual({ value: 0.123, se: 0.022, ci: null });
+    expect(c4b4.stdyx).toEqual({ value: 0.282, se: 0.045, ci: null });
+    const x1x2 = graph.edges.find((e) => e.kind === 'COVAR')!;
+    expect(x1x2.unstd?.value).toBeCloseTo(-0.006, 3);
+    expect(x1x2.stdyx?.value).toBeCloseTo(-0.011, 3);
+  });
+});
+
+describe('buildGraph - covariance values', () => {
+  it('adds no value for the 999.000 rows of exogenous pairs in syn_path.dgm', () => {
+    const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_path.dgm'), 'utf8')));
+    const covars = graph.edges.filter((e) => e.kind === 'COVAR');
+    expect(covars.map((e) => [e.from, e.to].sort().join('|')).sort()).toEqual(['k1|k2', 'k1|k3', 'k2|k3']);
+    for (const e of covars) {
+      expect(e.unstd, e.id).toBeNull();
+      expect(e.stdyx, e.id).toBeNull();
+    }
+  });
+
+  it('keeps the value of a row whose SE alone is 999.000, with no SE', () => {
+    const g = synthGraph('f BY y1 y2 y3;', ['2 1 y1 y3 0.100 999.000']);
+    const est = g.edges.find((e) => e.kind === 'COVAR')!.unstd!;
+    expect(est.value).toBeCloseTo(0.1, 3);
+    expect(est.se).toBeNaN();
+  });
+
+  it('leaves the STDYX value empty for a covariance without a code-12 row', () => {
+    const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2;', ['2 1 y1 y2 0.300 0.100']);
+    const w = g.edges.find((e) => e.kind === 'WITH')!;
+    expect(w.unstd?.value).toBeCloseTo(0.3, 3);
+    expect(w.stdyx).toBeNull();
+  });
+});
+
+describe('buildGraph - confidence limits (syn_cint.dgm, OUTPUT: CINTERVAL)', () => {
+  const graph = buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_cint.dgm'), 'utf8')));
+
+  it('attaches the limits of each mode to its estimate, covariances included', () => {
+    const faA1 = graph.edges.find((e) => e.id === 'BY:fa->a1')!;
+    expect(faA1.unstd?.ci).toEqual({ lower: 0.719, upper: 0.891 });
+    const c4b4 = graph.edges.find((e) => e.id === 'WITH:c4->b4')!;
+    expect(c4b4.unstd?.ci).toEqual({ lower: 0.079, upper: 0.167 });
+    expect(c4b4.stdyx?.ci).toEqual({ lower: 0.193, upper: 0.371 });
+  });
+
+  it('hasConfidenceLimits tells a file with limits from one without', () => {
+    expect(hasConfidenceLimits(graph)).toBe(true);
+    expect(hasConfidenceLimits(buildGraph(parseDgm(readFileSync(join(DGM_DIR, 'syn_sem.dgm'), 'utf8'))))).toBe(false);
+    expect(hasConfidenceLimits(null)).toBe(false);
   });
 });
 
@@ -203,9 +256,8 @@ describe('buildGraph - symmetric edges are deduplicated (X3)', () => {
   });
 
   it('keeps modifiers from both declarations on the single WITH edge, and matches covariance rows in either order to it', () => {
-    // Code 2 rows are not attached as estimates yet (TODO.md); this checks
-    // only that a reversed covariance row finds the declared WITH edge
-    // instead of synthesizing a second COVAR or ON edge.
+    // A reversed covariance row finds the declared WITH edge instead of
+    // synthesizing a second COVAR or ON edge.
     const g = synthGraph('f BY y1 y2 y3;\ny1 WITH y2*;\ny2 WITH y1 (c1);', [
       '2 1 y2 y1 0.300 0.100',
       '2 1 y1 y2 0.300 0.100',
@@ -215,6 +267,7 @@ describe('buildGraph - symmetric edges are deduplicated (X3)', () => {
     expect(withs[0].id).toBe('WITH:y1->y2');
     expect(withs[0].free).toBe(true);
     expect(withs[0].constraint).toBe('c1');
+    expect(withs[0].unstd?.value).toBeCloseTo(0.3, 3);
     expect(g.edges.filter((e) => e.kind === 'ON' || e.kind === 'COVAR')).toEqual([]);
   });
 
@@ -235,8 +288,7 @@ describe('buildGraph - estimate rows prefer exact direction (P1)', () => {
     expect(on[0].unstd?.value).toBeCloseTo(0.4, 3);
     const covars = g.edges.filter((e) => e.kind === 'COVAR');
     expect(covars).toHaveLength(1);
-    expect(covars[0].unstd).toBeNull();
-    expect(covars[0].stdyx).toBeNull();
+    expect(covars[0].unstd?.value).toBeCloseTo(0.1, 3); // the code-2 row, not the ON row's 0.4
   });
 
   it.each([1, 11, 21, 31])(

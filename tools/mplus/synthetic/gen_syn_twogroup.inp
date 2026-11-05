@@ -1,0 +1,21 @@
+TITLE: mplusplus synthetic fixture, data generation for syn_twogroup
+  (invented model and names; simulated data only)
+MONTECARLO:
+  NAMES ARE m1 m2 m3 n1;
+  NGROUPS = 2;
+  NOBSERVATIONS = 300 300;
+  NREPS = 1;
+  SEED = 20261104;
+  SAVE = syn_twogroup.dat;
+MODEL POPULATION:
+  fm BY m1*0.8 m2*0.7 m3*0.6;
+  fm@1;
+  m1*0.4 m2*0.4 m3*0.4;
+  n1 ON fm*0.3;
+  n1*0.7;
+MODEL POPULATION-g2:
+  n1 ON fm*0.5;
+MODEL:
+  fm BY m1* m2 m3;
+  fm@1;
+  n1 ON fm;

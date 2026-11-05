@@ -108,3 +108,22 @@ export function indicatorSide(
   if (column === columnCount - 1) return 'right';
   return latentsInColumn > 1 && indexInColumn === 0 ? 'top' : 'bottom';
 }
+
+/**
+ * The residual side for a variable in the middle column of a diagram with
+ * an odd number of columns (one column included). Left is Amelia's proposal
+ * (2026-11-04: "I'm thinking default left"), awaiting her confirmation.
+ */
+export const MIDDLE_COLUMN_RESIDUAL_SIDE: Side = 'left';
+
+/**
+ * The outer edge for a variable in `column` of `columnCount` columns
+ * (docs/diagram-conventions.md D18): left in the left half, right in the
+ * right half, `MIDDLE_COLUMN_RESIDUAL_SIDE` in the middle column. Halves
+ * are counted in columns, not in drawn width; an even count has no middle.
+ */
+export function outerSide(column: number, columnCount: number): Side {
+  const middle = (columnCount - 1) / 2;
+  if (column === middle) return MIDDLE_COLUMN_RESIDUAL_SIDE;
+  return column < middle ? 'left' : 'right';
+}

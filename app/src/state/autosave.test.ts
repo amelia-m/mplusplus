@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
+import { outToDgm } from '../parser/outModel.js';
 import { buildGraph } from '../model/graph.js';
 import { placeSem } from '../layout/sem.js';
 import { DEFAULT_GLOBAL_STYLE } from '../render/styles.js';
@@ -48,6 +49,21 @@ describe('autosave', () => {
     expect(r.graph.nodes.map((n) => n.id).sort()).toEqual(buildGraph(parseDgm(text)).nodes.map((n) => n.id).sort());
     expect(r.layout).toEqual(layout);
     expect(r.slice).toEqual(slice);
+  });
+
+  it('restores a diagram opened from a .out on its own from the saved .out text', () => {
+    const outText = readFileSync(resolve(__dirname, '../../test/fixtures/sample.out'), 'utf8');
+    const graph = buildGraph(outToDgm(outText));
+    const outLayout = placeSem(graph, 120, 56);
+    const saved = toSession('syn_sem.out', outText, 'sem', outLayout, slice, new Date('2026-11-04T10:00:00Z'), 'tab-a', 'out');
+    const storage = memoryStorage();
+    saveSession(storage, KEY, saved);
+    const loaded = loadSession(storage, KEY)!;
+    expect(loaded.sourceKind).toBe('out');
+    const r = restoreSession(loaded, 'sem');
+    expect(r.graph.source.origin).toBe('out');
+    expect(r.graph.edges.map((e) => e.id).sort()).toEqual(graph.edges.map((e) => e.id).sort());
+    expect(r.layout).toEqual(outLayout);
   });
 
   it('drops a saved layout that no longer fits the graph, so the model is laid out again', () => {

@@ -99,8 +99,18 @@ describe('residual side choice', () => {
     expect(residualIds({ layout } as never, new Set(['f', 'a', 'b']))).toEqual(['a', 'b']);
     expect(residualIds({ layout: null }, new Set(['a']))).toEqual([]);
   });
-  it("shows the first one's stored side, or Auto when the layout decides", () => {
-    expect(residualSideChoice({ residualSides: { a: 'left' } }, ['a', 'b'])).toBe('left');
-    expect(residualSideChoice({ residualSides: { b: 'left' } }, ['a', 'b'])).toBe('');
+  it('shows Mixed when the selected residuals are drawn on different sides, not the first one\'s side', () => {
+    // The bug: a factor on Right and its indicators on Left showed Right.
+    expect(residualSideChoice({ layout, residualSides: { a: 'left' } } as never, ['a', 'b'])).toBe('mixed');
+    expect(residualSideChoice({ layout, residualSides: { b: 'left' } } as never, ['a', 'b'])).toBe('mixed');
+    const split = { residuals: [{ id: 'a', side: 'top' as const }, { id: 'b', side: 'left' as const }] };
+    expect(residualSideChoice({ layout: split, residualSides: {} } as never, ['a', 'b'])).toBe('mixed');
+  });
+  it('shows the shared side when the drawn sides agree, and a single selection is never Mixed', () => {
+    expect(residualSideChoice({ layout, residualSides: { a: 'left', b: 'left' } } as never, ['a', 'b'])).toBe('left');
+    expect(residualSideChoice({ layout, residualSides: {} } as never, ['a', 'b'])).toBe('');
+    expect(residualSideChoice({ layout, residualSides: { a: 'right' } } as never, ['a', 'b'])).toBe('right');
+    expect(residualSideChoice({ layout, residualSides: { a: 'left' } } as never, ['a'])).toBe('left');
+    expect(residualSideChoice({ layout, residualSides: {} } as never, ['b'])).toBe('');
   });
 });

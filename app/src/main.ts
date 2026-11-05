@@ -4,7 +4,8 @@
  * keys. Owns `redraw()`, the single re-render entry point: it merges the
  * store's `positions` into the layout result, renders, re-wires node drag
  * and refits the viewBox. Loading a `.dgm` lays it out (`runLayout`) and
- * resets the undo history; a `.out` attaches p-values to the loaded graph.
+ * resets the undo history; a `.out` attaches p-values to the loaded graph,
+ * or, with no diagram loaded, opens as a diagram on its own.
  */
 import { loadDgmFile, loadOutFile, classifyFile } from './io/load.js';
 import { semEngine } from './layout/sem.js';
@@ -19,7 +20,8 @@ import {
   type GroupSelection,
 } from './render/svg.js';
 import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
-import { overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
+import { curveLabelHalfWidth, overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
+import { DEFAULT_EDGE_STYLE } from './render/styles.js';
 import { wireSelection } from './render/selection.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
@@ -30,9 +32,19 @@ import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { DEMOS, type Demo } from './ui/demos.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
-import { modelCaptions } from './model/caption.js';
+import { modelCaptions, OUT_ORIGIN_NOTE } from './model/caption.js';
+import { readOutModel } from './parser/outModel.js';
+import { openExportDialog } from './ui/exportDialog.js';
+import { buildGraph } from './model/graph.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
-import { restoredPositions, restoreSession, type SavedSession, type SaveState, type SessionStorage } from './state/autosave.js';
+import {
+  restoredPositions,
+  restoreSession,
+  type SavedSession,
+  type SaveState,
+  type SessionStorage,
+  type SourceKind,
+} from './state/autosave.js';
 import { AutosaveController } from './state/autosaveController.js';
 import type { TabChannel } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
@@ -90,8 +102,8 @@ const autosave = storage
  * engine is laid out again (see `restore`).
  */
 const engineName = DEFAULT_LAYOUT_ENGINE;
-/** The loaded `.dgm`, kept so autosave can store its text. */
-let current: { fileName: string; dgmText: string } | null = null;
+/** The loaded file (a `.dgm`, or a `.out` opened on its own), kept so autosave can store its text. */
+let current: { fileName: string; dgmText: string; sourceKind: SourceKind } | null = null;
 /** Set by Discard, so no save lands between clearing the slot and the reload. */
 let discarding = false;
 /** Set when storage refused a save, so the warning is shown once per diagram. */
@@ -160,7 +172,29 @@ function relayout(): void {
     });
 }
 
-mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout, onMessage: (text) => toast(text) });
+mountToolbar(toolbarHost, {
+  onRedraw: redraw,
+  onRelayout: relayout,
+  onMessage: (text) => toast(text),
+  onExport: (kind) => {
+    const s = useStore.getState();
+    const source =
+      current && s.graph
+        ? {
+            svg,
+            fileName: current.fileName,
+            fileText: current.dgmText,
+            coefficientMode: s.global.coefMode,
+            // The weight captions only: the .out-origin note is drawn on the
+            // diagram, which the export carries, but it is not a weight.
+            weights: modelCaptions(s.graph.source).filter((c) => c !== OUT_ORIGIN_NOTE),
+            // A `.out` opened on its own is its own p-value source too.
+            outAttached: current.sourceKind === 'out' || Object.keys(s.pValues).length > 0,
+          }
+        : null;
+    openExportDialog(kind, source, (text) => toast(text));
+  },
+});
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);
@@ -280,7 +314,7 @@ function saveNow(): void {
   window.clearTimeout(saveTimer);
   const state = saveState();
   if (!autosave || discarding || !current || !state) return;
-  const input = { fileName: current.fileName, dgmText: current.dgmText, state };
+  const input = { fileName: current.fileName, dgmText: current.dgmText, sourceKind: current.sourceKind, state };
   // Storage is full: free closed tabs' slots and try again, once per
   // diagram, then say so if it still fails. A save that goes through
   // re-arms the retry for a later refusal.
@@ -367,7 +401,7 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     if (fileLoaded) return;
     installGraph(graph, placed, slice);
     redraw();
-    current = { fileName: session.fileName, dgmText: session.dgmText };
+    current = { fileName: session.fileName, dgmText: session.dgmText, sourceKind: session.sourceKind ?? 'dgm' };
     offered = null;
     saveRefused = false;
     autosave?.markSaved(saveState());
@@ -403,32 +437,42 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
   }
 }
 
-/** Load a dropped, picked or demo file; true when it was loaded or attached. */
-async function handleFile(file: File): Promise<boolean> {
+/** The load in progress, which the next file waits for. */
+let loadQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Load a dropped, picked or demo file; true when it was loaded or attached.
+ * Files load one at a time, in the order they came: a `.out` dropped while a
+ * `.dgm` is still being laid out then attaches to it instead of opening on
+ * its own, and two `.dgm` files cannot finish out of order.
+ */
+function handleFile(file: File): Promise<boolean> {
+  const run = loadQueue.then(() => loadFile(file));
+  loadQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function loadFile(file: File): Promise<boolean> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
       const { graph, text } = await loadDgmFile(file);
-      const layout = await computeLayout(graph);
-      // Set in the same step as the install, so a restore still in
-      // progress sees it and gives way; a load that failed never sets it.
-      installGraph(graph, layout);
-      fileLoaded = true;
-      current = { fileName: file.name, dgmText: text };
-      saveRefused = false;
-      offered = null;
+      await openDiagram(file.name, text, 'dgm', graph);
       notice.hidden = true;
-      // After a restore that failed, autosave stopped to keep the broken
-      // slot; a new file gets a new slot, so it is saved and the old one kept.
-      if (autosave?.isStopped && !discarding) await autosave.startFresh();
-      redraw();
-      dropzone.classList.add('hidden');
-      toast(`Loaded ${file.name}`);
       return true;
     } else if (kind === 'out') {
       if (!useStore.getState().graph) {
-        toast('Load a .dgm file before attaching a .out file.', true);
-        return false;
+        // Nothing loaded: open the .out as a diagram on its own.
+        const { text, pValues } = await loadOutFile(file);
+        const model = readOutModel(text);
+        if (!model.ok) {
+          toast(`Cannot open ${file.name}: ${model.message}`, true);
+          return false;
+        }
+        await openDiagram(file.name, text, 'out', buildGraph(model.dgm), { pValues });
+        const noEcho = model.echo ? '' : ' It has no input echo (NOECHO), so labels are not shown.';
+        showNotice(`${OUT_ORIGIN_NOTE}.${noEcho}`, 'opened');
+        return true;
       }
       const { pValues } = await loadOutFile(file);
       const graph = useStore.getState().graph;
@@ -449,6 +493,34 @@ async function handleFile(file: File): Promise<boolean> {
     toast(`Failed to load ${file.name}: ${(err as Error).message}`, true);
     return false;
   }
+}
+
+/**
+ * Make a newly loaded file the open diagram: lay it out and install it with
+ * `slice` (a `.out`'s p-values) as the undo baseline. Autosave then saves it
+ * with its text and source kind (`current`).
+ */
+async function openDiagram(
+  fileName: string,
+  text: string,
+  sourceKind: SourceKind,
+  graph: ModelGraph,
+  slice?: Partial<HistorySlice>,
+): Promise<void> {
+  const layout = await computeLayout(graph);
+  // Set in the same step as the install, so a restore still in
+  // progress sees it and gives way; a load that failed never sets it.
+  installGraph(graph, layout, slice);
+  fileLoaded = true;
+  current = { fileName, dgmText: text, sourceKind };
+  saveRefused = false;
+  offered = null;
+  // After a restore that failed, autosave stopped to keep the broken
+  // slot; a new file gets a new slot, so it is saved and the old one kept.
+  if (autosave?.isStopped && !discarding) await autosave.startFresh();
+  redraw();
+  dropzone.classList.add('hidden');
+  toast(`Loaded ${fileName}`);
 }
 
 let toastTimer: number | undefined;
@@ -539,7 +611,8 @@ function fitViewBox(overlay?: OverlayGeometry): void {
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
   if (merged && s.graph) {
     const shapeOf = nodeShapeLookup(s.graph, s.nodeStyles);
-    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf)));
+    const labelHalf = curveLabelHalfWidth({ ...s.global, fontSize: DEFAULT_EDGE_STYLE.labelFontSize });
+    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf), labelHalf));
   }
   const content = contentViewBox(boxes, { points });
   const captions = s.graph ? modelCaptions(s.graph.source) : [];

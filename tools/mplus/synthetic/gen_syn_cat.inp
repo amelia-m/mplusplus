@@ -1,0 +1,16 @@
+TITLE: mplusplus synthetic fixture, data generation for syn_cat
+  (invented model and names; simulated data only;
+  syn_cat.inp cuts these continuous items into binary ones)
+MONTECARLO:
+  NAMES ARE u1 u2 u3 u4;
+  NOBSERVATIONS = 400;
+  NREPS = 1;
+  SEED = 20261104;
+  SAVE = syn_cat.dat;
+MODEL POPULATION:
+  fu BY u1*0.8 u2*0.7 u3*0.6 u4*0.5;
+  fu@1;
+  u1*0.4 u2*0.5 u3*0.6 u4*0.7;
+MODEL:
+  fu BY u1* u2 u3 u4;
+  fu@1;

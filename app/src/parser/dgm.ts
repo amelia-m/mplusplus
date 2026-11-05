@@ -106,6 +106,12 @@ export interface DgmFile {
   latents: string[];
   /** Convenience: observed variables (members of any grouping). */
   observed: string[];
+  /**
+   * Set to `'out'` when the model was read from an Mplus `.out` alone
+   * (`parser/outModel.ts`), so the diagram can say it was not laid out from a
+   * `.dgm`. `parseDgm` leaves it unset.
+   */
+  origin?: 'out';
 }
 
 const INPUT_END_RE = /^\s*INPUT_END\s*$/m;
@@ -137,11 +143,17 @@ function optionRe(name: string): RegExp {
   return new RegExp(`(?:^|;)\\s*${keyword(name)}${OPTION_ASSIGN}([\\s\\S]*?);`, 'i');
 }
 
-export function parseDgm(text: string): DgmFile {
-  const split = splitOnInputEnd(text);
-  const inputBlock = split.before + 'INPUT_END\n';
+/** What an Mplus input gives: the parts of `DgmFile` read from the syntax. */
+export type ParsedInput = Pick<DgmFile, 'variables' | 'useVar' | 'weights' | 'modelStatements'>;
 
-  const cleanedInput = stripCommentsAndJoin(split.before);
+/**
+ * Read an Mplus input (the syntax before a `.dgm`'s `INPUT_END`, or the
+ * input echo of a `.out`): the NAMES and USEVARIABLES lists, the weight
+ * options and the MODEL statements. Never throws; a missing command gives
+ * empty lists.
+ */
+export function parseInputBlock(input: string): ParsedInput {
+  const cleanedInput = stripCommentsAndJoin(input);
   // Options are read from the VARIABLE command only, so a TITLE or a model
   // statement that happens to start with an option name is not taken for one.
   const variableCommand = commandBody(cleanedInput, VARIABLE_HEADER_RE) ?? '';
@@ -158,6 +170,14 @@ export function parseDgm(text: string): DgmFile {
   // List order for observed variables in MODEL ranges: USEVARIABLES, or
   // NAMES when there is no USEVARIABLES (see `rangeByPosition`).
   const modelStatements = parseModelBlock(cleanedInput, useVar.length > 0 ? useVar : variables);
+  return { variables, useVar, weights, modelStatements };
+}
+
+export function parseDgm(text: string): DgmFile {
+  const split = splitOnInputEnd(text);
+  const inputBlock = split.before + 'INPUT_END\n';
+
+  const { variables, useVar, weights, modelStatements } = parseInputBlock(split.before);
 
   const { header, estimates } = parseEstimateSection(split.after);
 
@@ -278,7 +298,7 @@ function parseModelBlock(text: string, observedOrder: string[]): ModelStmt[] {
   // ends in `;`. Discard empty fragments.
   const statements = body
     .split(';')
-    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .map((s) => spreadLabelLists(s).replace(/\s+/g, ' ').trim())
     .filter((s) => s.length > 0)
     .map(splitStatement);
 
@@ -303,18 +323,102 @@ function parseModelBlock(text: string, observedOrder: string[]): ModelStmt[] {
     }
     // A range may stand on either side of ON and WITH but only on the right
     // of BY (ch. 17 p. 731): the left of BY is the one latent it defines.
-    const rhs = expandTerms(s.rhs, resolve);
+    const rhs = assignLabelLists(expandTerms(s.rhs, resolve));
     if (s.op === 'BY') {
       out.push({ raw: s.raw, op: s.op, lhs: s.lhs[0]?.name ?? '', rhs });
     } else {
       // Expand `a b ON c d` (and `a1-a3 ON c`) into one statement per LHS so
       // consumers can iterate edges trivially. RHS is shared.
-      for (const l of expandTerms(s.lhs, resolve)) {
-        out.push({ raw: s.raw, op: s.op, lhs: l.name, rhs });
-      }
+      const op = s.op;
+      const lhs = expandTerms(s.lhs, resolve);
+      const perLhs = labelsAcrossLhs(rhs, lhs.length);
+      lhs.forEach((l, k) => {
+        out.push({ raw: s.raw, op, lhs: l.name, rhs: perLhs ? [{ ...rhs[0], constraint: perLhs[k] }] : rhs });
+      });
     }
   }
   return out;
+}
+
+// ---------- label lists ----------
+//
+// A list of labels in parentheses at the end of a line (`(a1-a3)`) gives one
+// label per parameter on that line, in order: Mplus writes
+// `y2-y3(lam2-lam3)` as label rows `lam2` for y2 and `lam3` for y3 (User's
+// Guide ex5.20), and `V013_1* V013_4 (a1-a2)` as `a1` and `a2` (the
+// Verkuyten et al. replication inputs, Mplus 8.11 runs of 2026-10-22).
+
+/** A label list: two labels joined by a hyphen, in parentheses at the end of a line. */
+const LABEL_LIST_RE = /\(\s*([A-Za-z_][A-Za-z0-9_]*-[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$/;
+
+/**
+ * Give every parameter on a line that ends in a label list a copy of the
+ * list, so `assignLabelLists` can hand them out in order once ranges are
+ * expanded. Lines with brackets (means and intercepts) are left alone.
+ */
+function spreadLabelLists(statement: string): string {
+  return statement
+    .split('\n')
+    .map((line) => {
+      const m = LABEL_LIST_RE.exec(line);
+      if (!m || /[[\]]/.test(line)) return line;
+      const list = `(${m[1]})`;
+      const before = line.slice(0, m.index);
+      // Only the parameters after an operator on the same line take labels.
+      const op = /(^|\s)(BY|ON|WITH)(\s|$)/i.exec(before);
+      const head = op ? before.slice(0, op.index + op[0].length) : '';
+      // One parameter per entry: a modifier written apart from its name
+      // (`y2 @ 1`, `y2 * 0.8`, `y2 @1`) stays with it, so the list lands
+      // after the whole parameter and the value is not cut off.
+      const params: string[] = [];
+      for (const t of before.slice(head.length).trim().split(/\s+/).filter(Boolean)) {
+        const last = params.length - 1;
+        // A bare trailing `*` (`y1*`, free) takes a value only when one follows.
+        const joins = /^[@*]/.test(t) || (/[@*]$/.test(params[last] ?? '') && MODIFIER_VALUE_RE.test(t));
+        if (last >= 0 && joins) params[last] += ` ${t}`;
+        else params.push(t);
+      }
+      // Parameters before another label on the line keep that label.
+      let from = 0;
+      params.forEach((t, k) => {
+        if (t.includes('(') || t.includes(')')) from = k + 1;
+      });
+      const spread = params.map((p, k) => (k < from || MODIFIER_VALUE_RE.test(p) ? p : `${p} ${list}`));
+      return `${head}${spread.join(' ')}`;
+    })
+    .join('\n');
+}
+
+/**
+ * Hand out label lists: a run of consecutive terms carrying the same list
+ * (`lam2-lam3`) takes one generated label each, in order, when the run is as
+ * long as the list. Otherwise the list is kept as written.
+ */
+function assignLabelLists(terms: ModelTerm[]): ModelTerm[] {
+  const out = terms.map((t) => ({ ...t }));
+  for (let i = 0; i < out.length; ) {
+    const list = out[i].constraint;
+    let j = i + 1;
+    while (j < out.length && list !== null && out[j].constraint === list) j++;
+    const r = list === null ? null : splitRange(list);
+    const labels = r && generateNames(r[0], r[1]);
+    if (labels && labels.length === j - i) labels.forEach((label, k) => (out[i + k].constraint = label));
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * A label list on the one right-hand term of a statement whose left-hand
+ * side expands to as many variables (`y1-y3 ON x (b1-b3)`) gives one label
+ * per left-hand variable, in order, as there is one parameter per variable;
+ * null when that does not apply, and the list is then kept as written.
+ */
+function labelsAcrossLhs(rhs: ModelTerm[], lhsCount: number): string[] | null {
+  if (rhs.length !== 1 || lhsCount < 2 || rhs[0].constraint === null) return null;
+  const r = splitRange(rhs[0].constraint);
+  const labels = r && generateNames(r[0], r[1]);
+  return labels && labels.length === lhsCount ? labels : null;
 }
 
 /** Split one flattened MODEL statement at its BY / ON / WITH operator. */
@@ -711,7 +815,12 @@ function looksLikeVariableList(line: string): boolean {
   return tokens.every((t) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(t));
 }
 
-const NUM_RE = /^-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?$/;
+/**
+ * A number in an estimate row. Mplus writes a value too small for three
+ * decimals in full and without the leading zero (`-.0003941533214`, in a
+ * Verkuyten et al. replication run and `dgm/idnfc41b.dgm`).
+ */
+const NUM_RE = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/;
 
 /**
  * Constraint-label row codes, 90 plus the parameter type, and how many

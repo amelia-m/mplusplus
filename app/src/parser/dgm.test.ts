@@ -150,6 +150,45 @@ describe('parseDgm - constraint-label rows of every type (syn_label.dgm)', () =>
       expect.objectContaining({ code: 95, from: 'f', to: null, constraintLabel: 'lv', value: null }),
     ]);
   });
+
+  it('reads a value written without its leading zero (`-.0003941533214`), which dropped the row', () => {
+    const d = parseDgm(synthDgm('MODEL:\nf BY y1 y2 y3;', ['1 1 f y2 -.0003941533214 0.003']));
+    expect(d.estimates).toEqual([expect.objectContaining({ code: 1, from: 'f', to: 'y2', value: -0.0003941533214 })]);
+  });
+});
+
+describe('parseDgm - label lists', () => {
+  // Mplus gives one label per parameter on the line, in order (its label
+  // rows for User's Guide ex5.20 and the Verkuyten et al. inputs).
+  it('hands a label list out over a range (`y2-y3(lam2-lam3)`), which kept `lam2-lam3` on both', () => {
+    expect(byTerms('f BY y1\n y2-y3(lam2-lam3);').map((t) => t.constraint)).toEqual([null, 'lam2', 'lam3']);
+  });
+
+  it('hands a label list out over the parameters on its line, and only those', () => {
+    expect(byTerms('f BY y1* (B1)\n y2 y3 (B2-B3);').map((t) => t.constraint)).toEqual(['B1', 'B2', 'B3']);
+    expect(byTerms('f BY y1* y2 y3 (a1-a3);').map((t) => t.constraint)).toEqual(['a1', 'a2', 'a3']);
+    // A parameter before another label on the line keeps that label.
+    expect(byTerms('f BY y1 (a) y2 y3 (b2-b3);').map((t) => t.constraint)).toEqual(['a', 'b2', 'b3']);
+  });
+  it('keeps a modifier written apart from its name on a line with a label list (`y2 @ 1`, `y2 * 0.8`), which lost the value', () => {
+    const rhs = byTerms('f BY y1 y2 @ 1 y3 * 0.8 (a1-a3);');
+    expect(rhs.map((t) => [t.name, t.fixed, t.start, t.constraint])).toEqual([
+      ['y1', null, null, 'a1'],
+      ['y2', 1, null, 'a2'],
+      ['y3', null, 0.8, 'a3'],
+    ]);
+  });
+
+  it('hands a label list out over a left-hand range (`y1-y3 ON x (b1-b3)`), which kept `b1-b3` on all three', () => {
+    const on = statementsOf('y1-y3 ON x (b1-b3);').filter((s) => s.op === 'ON');
+    expect(on.map((s) => [s.lhs, s.rhs[0].name, s.rhs[0].constraint])).toEqual([
+      ['y1', 'x', 'b1'],
+      ['y2', 'x', 'b2'],
+      ['y3', 'x', 'b3'],
+    ]);
+  });
+  // A list whose length does not match the parameters is kept as written on
+  // each of them (`assignLabelLists`); what Mplus does with one is not known.
 });
 
 // dc_tol_sem.dgm: a published model (CC0, see dgm/README.md) run with

@@ -54,6 +54,14 @@ describe('AutosaveController', () => {
     expect(reloaded.id).toBe(a.controller.id);
   });
 
+  it('stores the source kind it is given, so a reload reads a .out as a .out', async () => {
+    const b = browser();
+    const t = b.tab();
+    await t.controller.start();
+    t.controller.save({ ...input('m.out'), sourceKind: 'out' });
+    expect(loadSession(b.storage, slotKey(t.controller.id!))?.sourceKind).toBe('out');
+  });
+
   it('keeps two open tabs apart: each writes only its own slot and is offered nothing of the other', async () => {
     const b = browser();
     const one = await b.saving('one.dgm');
