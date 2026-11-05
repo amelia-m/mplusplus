@@ -33,6 +33,7 @@ import { DEMOS, type Demo } from './ui/demos.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
 import { modelCaptions, OUT_ORIGIN_NOTE } from './model/caption.js';
 import { readOutModel } from './parser/outModel.js';
+import { openExportDialog } from './ui/exportDialog.js';
 import { buildGraph } from './model/graph.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
 import {
@@ -170,7 +171,27 @@ function relayout(): void {
     });
 }
 
-mountToolbar(toolbarHost, { onRedraw: redraw, onRelayout: relayout, onMessage: (text) => toast(text) });
+mountToolbar(toolbarHost, {
+  onRedraw: redraw,
+  onRelayout: relayout,
+  onMessage: (text) => toast(text),
+  onExport: (kind) => {
+    const s = useStore.getState();
+    const source =
+      current && s.graph
+        ? {
+            svg,
+            fileName: current.fileName,
+            fileText: current.dgmText,
+            coefficientMode: s.global.coefMode,
+            weights: modelCaptions(s.graph.source),
+            // A `.out` opened on its own is its own p-value source too.
+            outAttached: current.sourceKind === 'out' || Object.keys(s.pValues).length > 0,
+          }
+        : null;
+    openExportDialog(kind, source, (text) => toast(text));
+  },
+});
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);

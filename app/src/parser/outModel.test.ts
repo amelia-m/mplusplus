@@ -117,7 +117,9 @@ describe('outToDgm: what must survive (sample.out, syn_sem)', () => {
   it('keeps the covariance Mplus adds by default (X2 WITH X1) as a COVAR edge', () => {
     const e = graph.edges.find((x) => x.id === 'COVAR:x2->x1');
     expect(e?.kind).toBe('COVAR');
-    expect(e?.unstd).toBeNull(); // only codes 1 and 11 attach estimates, as for a .dgm
+    // Its code-2 row from the .out's X2 WITH X1 block, as a .dgm's code-2 row attaches.
+    expect(e?.unstd?.value).toBe(-0.006);
+    expect(e?.unstd?.se).toBe(0.027);
   });
 
   it('puts the labels la and lb on the loadings that carry them, and no others', () => {
