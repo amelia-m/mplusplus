@@ -32,6 +32,7 @@ import {
   type SavedSession,
   type SaveState,
   type SessionStorage,
+  type SourceKind,
   type StoredSlot,
 } from './autosave.js';
 import { claimTabId, openTabIds, type TabChannel, type TabLocks } from './autosaveTabs.js';
@@ -56,7 +57,10 @@ export interface AutosaveDeps {
 /** What a save writes. */
 export interface SaveInput {
   fileName: string;
+  /** The source file's text (`SavedSession.dgmText`). */
   dgmText: string;
+  /** What the text is; a `.dgm` when absent. */
+  sourceKind?: SourceKind;
   state: SaveState;
 }
 
@@ -214,7 +218,16 @@ export class AutosaveController {
 
   private toSession(input: SaveInput): SavedSession {
     const { state } = input;
-    return toSession(input.fileName, input.dgmText, state.engine, state.layout, state.slice, this.deps.now(), this.tabId!);
+    return toSession(
+      input.fileName,
+      input.dgmText,
+      state.engine,
+      state.layout,
+      state.slice,
+      this.deps.now(),
+      this.tabId!,
+      input.sourceKind,
+    );
   }
 
   /** Keep this tab's slot, open tabs' slots and the `MAX_SLOTS` most recent others; delete the rest. */

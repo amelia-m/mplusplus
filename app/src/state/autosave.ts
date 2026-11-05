@@ -1,14 +1,16 @@
 /**
  * Autosave sessions: the open diagram is kept in the browser's storage so a
  * reload does not lose it (Amelia, 2026-11-03: restore automatically, with a
- * Discard button). A session holds the `.dgm` text, the layout engine, the
- * layout and the undoable slice; restoring parses the text again, so a
+ * Discard button). A session holds the source text (a `.dgm`, or a `.out`
+ * opened on its own), the layout engine, the layout and the undoable slice;
+ * restoring parses the text again, so a
  * session never stores the parsed graph. Each tab saves to its own slot
  * (`slotKey`; which slot a tab uses and restores is `autosaveController.ts`).
  * Everything here is pure apart from the storage passed in, so it runs in
  * tests. Nothing leaves the browser.
  */
 import { parseDgm } from '../parser/dgm.js';
+import { outToDgm } from '../parser/outModel.js';
 import { buildGraph, type ModelGraph } from '../model/graph.js';
 import type { LayoutResult, NodeLayout } from '../layout/index.js';
 import { DEFAULT_GLOBAL_STYLE } from '../render/styles.js';
@@ -30,13 +32,19 @@ export interface SavedSession {
   /** ISO time of the save. */
   savedAt: string;
   fileName: string;
+  /** The source file's text: the `.dgm`, or the `.out` when `sourceKind` is `'out'`. */
   dgmText: string;
+  /** What `dgmText` is; absent in sessions saved before a `.out` could open on its own, which are `.dgm`s. */
+  sourceKind?: SourceKind;
   engine: string;
   layout: LayoutResult;
   slice: HistorySlice;
   /** The tab that wrote it (`state/autosaveTabs.ts`); absent in a session saved before tabs had ids. */
   tabId?: string;
 }
+
+/** The kind of file a diagram was opened from. */
+export type SourceKind = 'dgm' | 'out';
 
 /** The part of `Storage` autosave uses, so tests can pass a fake. */
 export type SessionStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key'> & {
@@ -51,8 +59,9 @@ export function toSession(
   slice: HistorySlice,
   now: Date,
   tabId?: string,
+  sourceKind: SourceKind = 'dgm',
 ): SavedSession {
-  return { version: VERSION, savedAt: now.toISOString(), fileName, dgmText, engine, layout, slice, tabId };
+  return { version: VERSION, savedAt: now.toISOString(), fileName, dgmText, sourceKind, engine, layout, slice, tabId };
 }
 
 /** The session in `raw`, or null when it is missing, malformed or from another version. */
@@ -76,7 +85,8 @@ export function readSession(raw: string | null): SavedSession | null {
     Array.isArray(s.layout?.edges) &&
     typeof s.slice === 'object' &&
     s.slice !== null &&
-    (s.tabId === undefined || typeof s.tabId === 'string');
+    (s.tabId === undefined || typeof s.tabId === 'string') &&
+    (s.sourceKind === undefined || s.sourceKind === 'dgm' || s.sourceKind === 'out');
   return ok ? (s as SavedSession) : null;
 }
 
@@ -219,10 +229,12 @@ export function layoutFitsGraph(layout: LayoutResult, graph: ModelGraph): boolea
  * the same engine the saved positions of nodes that still exist are kept
  * over it; from another engine they are left out (a diagram saved with the
  * ELK engine, dropped 2026-11-03, would otherwise keep ELK's boxes). Global style fields added since the save take their
- * defaults. Throws when the text no longer parses.
+ * defaults. A `.out` is read again as a model on its own. Throws when the
+ * text no longer parses, or a `.out` is no longer supported.
  */
 export function restoreSession(session: SavedSession, engine: string): RestoredSession {
-  const graph = buildGraph(parseDgm(session.dgmText));
+  const source = session.sourceKind === 'out' ? outToDgm(session.dgmText) : parseDgm(session.dgmText);
+  const graph = buildGraph(source);
   const s = session.slice;
   const sameEngine = session.engine === engine;
   const reuse = sameEngine && layoutFitsGraph(session.layout, graph);

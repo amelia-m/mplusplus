@@ -13,4 +13,11 @@ describe('modelCaptions', () => {
   it('says nothing for an unweighted analysis', () => {
     expect(modelCaptions({ weights: [] })).toEqual([]);
   });
+
+  it('says first that a model read from a .out alone was laid out from it', () => {
+    expect(modelCaptions({ weights: [{ option: 'WEIGHT', variables: 'w' }], origin: 'out' })).toEqual([
+      "Laid out from the .out; Mplus's Diagrammer may place it differently",
+      'Weighted: w',
+    ]);
+  });
 });

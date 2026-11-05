@@ -150,6 +150,28 @@ describe('parseDgm - constraint-label rows of every type (syn_label.dgm)', () =>
       expect.objectContaining({ code: 95, from: 'f', to: null, constraintLabel: 'lv', value: null }),
     ]);
   });
+
+  it('reads a value written without its leading zero (`-.0003941533214`), which dropped the row', () => {
+    const d = parseDgm(synthDgm('MODEL:\nf BY y1 y2 y3;', ['1 1 f y2 -.0003941533214 0.003']));
+    expect(d.estimates).toEqual([expect.objectContaining({ code: 1, from: 'f', to: 'y2', value: -0.0003941533214 })]);
+  });
+});
+
+describe('parseDgm - label lists', () => {
+  // Mplus gives one label per parameter on the line, in order (its label
+  // rows for User's Guide ex5.20 and the Verkuyten et al. inputs).
+  it('hands a label list out over a range (`y2-y3(lam2-lam3)`), which kept `lam2-lam3` on both', () => {
+    expect(byTerms('f BY y1\n y2-y3(lam2-lam3);').map((t) => t.constraint)).toEqual([null, 'lam2', 'lam3']);
+  });
+
+  it('hands a label list out over the parameters on its line, and only those', () => {
+    expect(byTerms('f BY y1* (B1)\n y2 y3 (B2-B3);').map((t) => t.constraint)).toEqual(['B1', 'B2', 'B3']);
+    expect(byTerms('f BY y1* y2 y3 (a1-a3);').map((t) => t.constraint)).toEqual(['a1', 'a2', 'a3']);
+    // A parameter before another label on the line keeps that label.
+    expect(byTerms('f BY y1 (a) y2 y3 (b2-b3);').map((t) => t.constraint)).toEqual(['a', 'b2', 'b3']);
+  });
+  // A list whose length does not match the parameters is kept as written on
+  // each of them (`assignLabelLists`); what Mplus does with one is not known.
 });
 
 // dc_tol_sem.dgm: a published model (CC0, see dgm/README.md) run with
