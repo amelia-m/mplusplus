@@ -55,6 +55,20 @@ describe('buildProvenance', () => {
   it('says none for an unweighted model', () => {
     expect(buildProvenance({ ...INPUT, weights: [] }, { includeFileName: true }).weight).toBe('none');
   });
+
+  it('lists renamed variables as display name (mplus name), and no line when none is renamed', () => {
+    const displayNames = [
+      { displayName: 'Anxiety', mplusName: 'FA' },
+      { displayName: 'fb', mplusName: 'FB' },
+    ];
+    const lines = provenanceLines(buildProvenance({ ...INPUT, displayNames }, { includeFileName: true }));
+    expect(lines).toContain('Display names: Anxiety (FA); fb (FB)');
+    for (const none of [undefined, []]) {
+      const record = buildProvenance({ ...INPUT, displayNames: none }, { includeFileName: true });
+      expect(record).not.toHaveProperty('displayNames');
+      expect(provenanceLines(record).some((l) => l.startsWith('Display names'))).toBe(false);
+    }
+  });
 });
 
 describe('composeSvg', () => {

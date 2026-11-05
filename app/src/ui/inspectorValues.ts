@@ -28,6 +28,30 @@ export function nodeInspectorStyle(s: InspectorSource): NodeStyle | null {
   return node ? effectiveNodeStyle(node, s.nodeStyles[node.id]) : null;
 }
 
+/** What the inspector's Mplus name and Display name rows show. */
+export interface DisplayNameField {
+  /** The first selected node's id. */
+  id: string;
+  /** Mplus's name for the first selected node, read-only. */
+  mplusName: string;
+  /** The stored display name, '' when Mplus's name is used. */
+  value: string;
+  /** False with more than one node selected: a name belongs to one variable. */
+  editable: boolean;
+}
+
+export function displayNameField(s: Pick<InspectorSource, 'graph' | 'selection' | 'nodeStyles'>): DisplayNameField | null {
+  const id = firstOf(s.selection);
+  const node = id != null ? s.graph?.nodes.find((n) => n.id === id) : undefined;
+  if (!node) return null;
+  return {
+    id: node.id,
+    mplusName: node.label,
+    value: s.nodeStyles[node.id]?.displayName ?? '',
+    editable: s.selection.size === 1,
+  };
+}
+
 export function edgeInspectorStyle(s: InspectorSource): EdgeStyle | null {
   const id = firstOf(s.edgeSelection);
   const edge = id != null ? s.graph?.edges.find((e) => e.id === id) : undefined;
