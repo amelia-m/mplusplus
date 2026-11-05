@@ -328,6 +328,73 @@ describe('AutosaveController', () => {
     expect(names(b)).toHaveLength(MAX_SLOTS + 2);
   });
 
+  describe('Open recent', () => {
+    it("lists this tab's and closed tabs' diagrams, most recent first, with name, time and owner, and no other open tab's", async () => {
+      const b = browser();
+      const closedOld = await b.saving('closed-old.dgm');
+      const otherOpen = await b.saving('other-open.dgm');
+      const closedNew = await b.saving('closed-new.dgm');
+      b.close(closedOld.controller.id!);
+      b.close(closedNew.controller.id!);
+      const me = await b.saving('mine.dgm');
+      const list = await me.controller.listRecent();
+      expect(list.map(({ fileName, owner }) => [fileName, owner])).toEqual([
+        ['mine.dgm', 'this-tab'],
+        ['closed-new.dgm', 'closed'],
+        ['closed-old.dgm', 'closed'],
+      ]);
+      expect(list[0].savedAt).toBe(loadSession(b.storage, slotKey(me.controller.id!))?.savedAt);
+      expect(list.map((e) => e.savedAt)).toEqual([...list.map((e) => e.savedAt)].sort().reverse());
+      expect(list.some((e) => e.key === slotKey(otherOpen.controller.id!))).toBe(false);
+    });
+
+    it("lists every other tab's diagram as unknown where the lock API is missing", async () => {
+      const b = browser(false);
+      await b.saving('other.dgm');
+      const me = await b.saving('mine.dgm');
+      expect((await me.controller.listRecent()).map((e) => e.owner)).toEqual(['this-tab', 'unknown']);
+    });
+
+    it("removes a closed tab's diagram and nothing else", async () => {
+      const b = browser();
+      const closed = await b.saving('closed.dgm');
+      b.close(closed.controller.id!);
+      const me = await b.saving('mine.dgm');
+      expect(await me.controller.remove(slotKey(closed.controller.id!))).toBe('removed');
+      expect(names(b)).toEqual(['mine.dgm']);
+      expect(await me.controller.remove(slotKey(closed.controller.id!))).toBe('missing');
+    });
+
+    it("refuses to remove this tab's own diagram or an open tab's", async () => {
+      const b = browser();
+      const open = await b.saving('open.dgm');
+      const me = await b.saving('mine.dgm');
+      expect(await me.controller.remove(slotKey(me.controller.id!))).toBe('refused');
+      expect(await me.controller.remove(slotKey(open.controller.id!))).toBe('refused');
+      expect(names(b)).toEqual(['mine.dgm', 'open.dgm']);
+    });
+
+    it('removes nothing where the lock API is missing, since any tab may be open', async () => {
+      const b = browser(false);
+      const other = await b.saving('other.dgm');
+      const me = await b.saving('mine.dgm');
+      expect(await me.controller.remove(slotKey(other.controller.id!))).toBe('refused');
+      expect(names(b)).toEqual(['mine.dgm', 'other.dgm']);
+    });
+
+    it('re-asks the lock API at remove time: a tab that opened since the list is not removed', async () => {
+      const b = browser();
+      const reopened = await b.saving('reopened.dgm');
+      b.close(reopened.controller.id!);
+      const me = await b.saving('mine.dgm');
+      const entry = (await me.controller.listRecent()).find((e) => e.fileName === 'reopened.dgm')!;
+      expect(entry.owner).toBe('closed');
+      await b.tab(reopened.tabStore).controller.start(); // the closed tab is reloaded and holds its lock again
+      expect(await me.controller.remove(entry.key)).toBe('refused');
+      expect(names(b)).toEqual(['mine.dgm', 'reopened.dgm']);
+    });
+  });
+
   it('keeps a duplicated tab apart from the original', async () => {
     const b = browser();
     const original = await b.saving('a.dgm');

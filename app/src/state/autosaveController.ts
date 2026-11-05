@@ -19,7 +19,9 @@
  *   on start, closed tabs' slots beyond the `MAX_SLOTS` most recent are
  *   deleted, and when storage refuses a save, closed tabs' slots are
  *   deleted oldest first to make room. Both ask the lock API which tabs
- *   are open at that moment, and delete nothing when it cannot tell.
+ *   are open at that moment, and delete nothing when it cannot tell. The
+ *   Open recent menu's remove button (`remove`) follows the same rule, for
+ *   one closed tab's slot at a time.
  */
 import {
   clearSession,
@@ -72,6 +74,23 @@ export interface StartResult {
   /** Otherwise, the most recent closed tab's diagram, to offer. */
   offer: SavedSession | null;
 }
+
+/**
+ * A kept diagram, for the Open recent menu (`ui/recentMenu.ts`). `owner`
+ * says whose slot it is: this tab's, a closed tab's, or `'unknown'` where
+ * the lock API cannot tell whether its tab is open.
+ */
+export interface RecentEntry {
+  key: string;
+  fileName: string;
+  /** ISO time of the save. */
+  savedAt: string;
+  owner: 'this-tab' | 'closed' | 'unknown';
+  session: SavedSession;
+}
+
+/** What `remove` did: deleted the slot, refused (this tab's, an open tab's, or nothing can tell), or found no such slot. */
+export type RemoveResult = 'removed' | 'refused' | 'missing';
 
 export class AutosaveController {
   private tabId: string | null = null;
@@ -214,6 +233,41 @@ export class AutosaveController {
     this.stopped = true;
     if (this.tabId) clearSession(this.deps.storage, slotKey(this.tabId));
     this.lastSaved = null;
+  }
+
+  /**
+   * The kept diagrams for the Open recent menu, most recently saved first:
+   * this tab's own slot and closed tabs' slots (Amelia, 2026-11-03). Other
+   * open tabs' slots are left out, as `start` leaves them out of the offer.
+   * Where the lock API cannot tell which tabs are open, every other slot is
+   * listed as `'unknown'`, since opening one writes nothing to it. Empty
+   * before `start`.
+   */
+  async listRecent(): Promise<RecentEntry[]> {
+    if (!this.tabId) return [];
+    const open = await openTabIds(this.deps.locks);
+    const me = this.tabId;
+    return listSlots(this.deps.storage).flatMap((s): RecentEntry[] => {
+      const owner = s.tabId === me ? 'this-tab' : !open ? 'unknown' : isClosed(s, open, me) ? 'closed' : null;
+      return owner ? [{ key: s.key, fileName: s.session.fileName, savedAt: s.session.savedAt, owner, session: s.session }] : [];
+    });
+  }
+
+  /**
+   * Delete a closed tab's slot (the menu's remove button). Refuses this
+   * tab's own slot and an open tab's, and, asking the lock API which tabs
+   * are open now, deletes nothing when it cannot tell (the rule of
+   * `makeRoomAndSave`).
+   */
+  async remove(key: string): Promise<RemoveResult> {
+    if (!this.tabId || key === slotKey(this.tabId)) return 'refused';
+    const open = await openTabIds(this.deps.locks);
+    if (!open) return 'refused';
+    const slot = listSlots(this.deps.storage).find((s) => s.key === key);
+    if (!slot) return 'missing';
+    if (!isClosed(slot, open, this.tabId)) return 'refused';
+    clearSession(this.deps.storage, key);
+    return 'removed';
   }
 
   private toSession(input: SaveInput): SavedSession {
