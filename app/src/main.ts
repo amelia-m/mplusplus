@@ -184,7 +184,9 @@ mountToolbar(toolbarHost, {
             fileName: current.fileName,
             fileText: current.dgmText,
             coefficientMode: s.global.coefMode,
-            weights: modelCaptions(s.graph.source),
+            // The weight captions only: the .out-origin note is drawn on the
+            // diagram, which the export carries, but it is not a weight.
+            weights: modelCaptions(s.graph.source).filter((c) => c !== OUT_ORIGIN_NOTE),
             // A `.out` opened on its own is its own p-value source too.
             outAttached: current.sourceKind === 'out' || Object.keys(s.pValues).length > 0,
           }
