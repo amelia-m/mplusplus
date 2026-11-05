@@ -194,6 +194,16 @@ mountToolbar(toolbarHost, {
         : null;
     openExportDialog(kind, source, (text) => toast(text));
   },
+  // Open recent: the kept diagrams, opened as the notice's Open does.
+  // Without browser storage nothing is kept, and the menu is not shown.
+  recent: autosave
+    ? {
+        list: () => autosave.listRecent(),
+        open: (entry) => void openKept(entry.session),
+        remove: (key) => autosave.remove(key),
+        onMessage: (text) => toast(text),
+      }
+    : undefined,
 });
 
 mountGlobalPanel(globalHost, { onRedraw: redraw });
@@ -352,8 +362,27 @@ function discardAndReload(): void {
 let offered: SavedSession | null = null;
 
 document.querySelector('#notice-open')!.addEventListener('click', () => {
-  if (offered) void restore(offered, 'offered');
+  if (offered) void openKept(offered);
 });
+
+/**
+ * Open a kept diagram (the notice's Open, or an Open recent entry) in this
+ * tab. It waits in the file load queue (`handleFile`), so it lands after any
+ * file already queued and before any queued after it: a `.out` dropped
+ * meanwhile attaches to whichever diagram is open when its turn comes, and
+ * neither can install in the middle of the other.
+ */
+function openKept(session: SavedSession): Promise<void> {
+  const run = loadQueue.then(() => restore(session, 'offered'));
+  loadQueue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * Bumped by each install of a loaded file or a saved diagram, so a restore
+ * still being laid out can tell that a newer diagram has landed and give way.
+ */
+let installs = 0;
 
 /**
  * Restore this tab's own diagram after a reload, or offer a closed tab's,
@@ -399,16 +428,22 @@ function showNotice(text: string, kind: 'restored' | 'offer' | 'opened', warning
  * only says so.
  */
 async function restore(session: SavedSession, source: 'own' | 'offered'): Promise<void> {
+  const seq = installs;
   try {
     const { graph, layout, slice } = restoreSession(session, engineName);
     const placed = layout ?? (await computeLayout(graph));
-    // A file the user loaded while this was laid out wins.
-    if (fileLoaded) return;
+    // A file the user loaded, or a diagram opened, while this was laid out wins.
+    if (installs !== seq) return;
     installGraph(graph, placed, slice);
+    installs++;
     redraw();
     current = { fileName: session.fileName, dgmText: session.dgmText, sourceKind: session.sourceKind ?? 'dgm' };
     offered = null;
     saveRefused = false;
+    // After this tab's own diagram failed to restore, autosave stopped to
+    // keep its slot; a diagram opened since is saved under a new id, as a
+    // loaded file is (openDiagram).
+    if (autosave?.isStopped && !discarding) await autosave.startFresh();
     autosave?.markSaved(saveState());
     dropzone.classList.add('hidden');
     const when = new Date(session.savedAt).toLocaleString();
@@ -419,9 +454,10 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     console.warn('Autosaved diagram could not be restored.', err);
     // A file the user loaded while this was laid out wins here too: it stays
     // on screen and is saved to a new slot, so the slot that failed is kept,
-    // as when the file comes after the failure (handleFile).
-    if (fileLoaded) {
-      if (!discarding) {
+    // as when the file comes after the failure (handleFile). A failed open
+    // of a kept diagram leaves this tab's slot as it is.
+    if (installs !== seq) {
+      if (source === 'own' && !discarding) {
         autosave?.stop();
         await autosave?.startFresh();
         saveNow();
@@ -530,6 +566,7 @@ async function openDiagram(
   // progress sees it and gives way; a load that failed never sets it.
   installGraph(graph, layout, slice);
   fileLoaded = true;
+  installs++;
   current = { fileName, dgmText: text, sourceKind };
   saveRefused = false;
   offered = null;
