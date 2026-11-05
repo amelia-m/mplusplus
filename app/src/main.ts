@@ -22,7 +22,7 @@ import {
 } from './render/svg.js';
 import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
 import { curveLabelHalfWidth, overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
-import { DEFAULT_EDGE_STYLE } from './render/styles.js';
+import { DEFAULT_EDGE_STYLE, displayNamePairs } from './render/styles.js';
 import { wireSelection } from './render/selection.js';
 import { elementSize, ViewController, wireZoom } from './render/zoom.js';
 import { mountToolbar } from './ui/toolbar.js';
@@ -213,6 +213,7 @@ mountToolbar(toolbarHost, {
             weights: modelCaptions(s.graph.source).filter((c) => c !== OUT_ORIGIN_NOTE),
             // A `.out` opened on its own is its own p-value source too.
             outAttached: current.sourceKind === 'out' || Object.keys(s.pValues).length > 0,
+            displayNames: displayNamePairs(s.graph.nodes, s.nodeStyles),
           }
         : null;
     openExportDialog(kind, source, (text) => toast(text));
@@ -289,10 +290,14 @@ async function openDemo(demo: Demo): Promise<void> {
   if (demoLoading) return;
   demoLoading = true;
   try {
-    for (const f of demo.files) {
-      if (!(await handleFile(new File([f.text], f.name, { type: 'text/plain' })))) return;
-    }
-    clearHistory();
+    // One queued job for the whole demo, so nothing else (a dropped file, an
+    // Open recent entry) can land between its `.dgm` and its `.out`.
+    await enqueueLoad(async () => {
+      for (const f of demo.files) {
+        if (!(await loadFile(new File([f.text], f.name, { type: 'text/plain' })))) return;
+      }
+      clearHistory();
+    });
   } finally {
     demoLoading = false;
   }
@@ -406,9 +411,7 @@ document.querySelector('#notice-open')!.addEventListener('click', () => {
  * neither can install in the middle of the other.
  */
 function openKept(session: SavedSession): Promise<void> {
-  const run = loadQueue.then(() => restore(session, 'offered'));
-  loadQueue = run.catch(() => undefined);
-  return run;
+  return enqueueLoad(() => restore(session, 'offered'));
 }
 
 /**
@@ -521,7 +524,12 @@ let loadQueue: Promise<unknown> = Promise.resolve();
  * its own, and two `.dgm` files cannot finish out of order.
  */
 function handleFile(file: File): Promise<boolean> {
-  const run = loadQueue.then(() => loadFile(file));
+  return enqueueLoad(() => loadFile(file));
+}
+
+/** Run `job` after every load queued before it, and before any queued after it. */
+function enqueueLoad<T>(job: () => Promise<T>): Promise<T> {
+  const run = loadQueue.then(job);
   loadQueue = run.catch(() => undefined);
   return run;
 }
