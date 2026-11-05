@@ -177,6 +177,8 @@ export class ViewController {
   private size: Size | null = null;
   private fittedLayout: unknown = undefined;
   private fitRequested = false;
+  /** Set by a zoom or pan, cleared by a fit: whether a resize keeps the view or refits. */
+  private userChanged = false;
   private content: ViewBox | null = null;
 
   /** Fit at the next `update`. */
@@ -195,11 +197,16 @@ export class ViewController {
       // Hidden: keep any view for when it is shown again.
       return this.view && this.size ? viewToViewBox(this.view, this.size) : content;
     }
-    if (!this.view || this.fitRequested || layout !== this.fittedLayout) {
+    const resized = this.size !== null && (this.size.width !== size.width || this.size.height !== size.height);
+    // A resize before the user has zoomed or panned refits: the canvas often
+    // settles to its size after the first fit (the panels fill in), and
+    // keeping that fit's zoom then cuts the diagram off.
+    if (!this.view || this.fitRequested || layout !== this.fittedLayout || (resized && !this.userChanged)) {
       this.view = fitView(content, size);
       this.fittedLayout = layout;
       this.fitRequested = false;
-    } else if (this.size && (this.size.width !== size.width || this.size.height !== size.height)) {
+      this.userChanged = false;
+    } else if (resized && this.size) {
       this.view = resizeView(this.view, this.size, size);
     }
     this.size = size;
@@ -210,6 +217,7 @@ export class ViewController {
   change(fn: (view: View, size: Size) => View): ViewBox | null {
     if (!this.view || !this.size) return null;
     this.view = fn(this.view, this.size);
+    this.userChanged = true;
     return viewToViewBox(this.view, this.size);
   }
 

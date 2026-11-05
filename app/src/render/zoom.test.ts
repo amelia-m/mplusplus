@@ -188,15 +188,24 @@ describe('ViewController fit decision', () => {
     expect(c.update(layout, content, size)).toEqual(fitted);
   });
 
-  it('keeps the zoom when the canvas is resized, and waits for a size before fitting', () => {
+  it('keeps a user zoom when the canvas is resized, and waits for a size before fitting', () => {
     const c = new ViewController();
     const layout = {};
     expect(c.update(layout, content, { width: 0, height: 0 })).toEqual(content);
     expect(c.change((v) => v)).toBeNull();
     const fitted = c.update(layout, content, size);
     expect(fitted).toEqual(viewToViewBox(fitView(content, size), size));
+    c.change((v) => zoomAt(v, 2, { x: 0, y: 0 }));
     const scale = c.current!.scale;
     c.update(layout, content, { width: 400, height: 600 });
     expect(c.current!.scale).toBe(scale);
+  });
+
+  it('refits on a resize before any zoom or pan (bug: the canvas settling after the first fit cut the diagram off)', () => {
+    const c = new ViewController();
+    const layout = {};
+    c.update(layout, content, { width: 1600, height: 900 });
+    const smaller = { width: 800, height: 450 };
+    expect(c.update(layout, content, smaller)).toEqual(viewToViewBox(fitView(content, smaller), smaller));
   });
 });
