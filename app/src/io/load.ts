@@ -1,8 +1,9 @@
 /**
  * File loading: reads a dropped or picked `File` and runs it through the
  * parsers. A `.dgm` goes through `parseDgm` and `buildGraph`; a `.out` goes
- * through `parseOut` and `buildPValueMap`. `classifyFile` picks the path by
- * file extension.
+ * through `parseOut` and `buildPValueMap`, and its text is kept so it can be
+ * opened on its own (`parser/outModel.ts`) when no `.dgm` is loaded.
+ * `classifyFile` picks the path by file extension.
  */
 import { parseDgm, type DgmFile } from '../parser/dgm.js';
 import { buildGraph, type ModelGraph } from '../model/graph.js';
@@ -25,6 +26,8 @@ export async function loadDgmFile(file: File): Promise<LoadedDgm> {
 
 export interface LoadedOut {
   file: File;
+  /** The file's text, for opening it on its own and for autosave. */
+  text: string;
   parsed: ParsedOut;
   /** Per-edge p-values keyed by `kind:from->to`. */
   pValues: Record<string, { unstd: number | null; stdyx: number | null }>;
@@ -34,7 +37,7 @@ export async function loadOutFile(file: File): Promise<LoadedOut> {
   const text = await file.text();
   const parsed = parseOut(text);
   const pValues = buildPValueMap(parsed);
-  return { file, parsed, pValues };
+  return { file, text, parsed, pValues };
 }
 
 /** Detect file kind by extension; content sniffing not required for v1. */

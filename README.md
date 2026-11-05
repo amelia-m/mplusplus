@@ -18,7 +18,7 @@ The application is built as a self-contained static Single Page Application (SPA
 
 ## Repository Structure
 
-- `app/` - SPA source code (`app/src/`), styles, and test suites. `app/test/fixtures/` holds the sample `.out` file used by the `.out` parser tests.
+- `app/` - SPA source code (`app/src/`), styles, and test suites. `app/test/fixtures/` holds the synthetic `.out` files used by the `.out` tests.
 - `dgm/` - Fixture corpus of synthetic Mplus `.dgm` diagrams: invented models fitted by Mplus to simulated data (see [dgm/README.md](dgm/README.md)). Adding fixtures here automatically extends test suite coverage.
 - `docs/reference/` - Index of third-party reference documentation, such as the [Mplus Diagrammer guide](https://www.statmodel.com/download/Mplus%20Diagrammer.pdf). See [docs/reference/README.md](docs/reference/README.md); local PDF copies are not committed.
 
@@ -43,7 +43,7 @@ npm run dev
 
 The Vite development server will start at `http://localhost:5173`.
 
-Drop a `.dgm` file anywhere on the page, or click the drop zone to choose one. To try the app without Mplus, open a demo example from the drop zone; each one's `.dgm` and `.out` files can also be downloaded there. To attach p-values, then drop the `.out` file from the same model; a `.out` is rejected until a `.dgm` is loaded.
+Drop a `.dgm` file anywhere on the page, or click the drop zone to choose one. To try the app without Mplus, open a demo example from the drop zone; each one's `.dgm` and `.out` files can also be downloaded there. To attach p-values, then drop the `.out` file from the same model. A `.out` dropped with no diagram loaded opens as a diagram on its own, laid out by the app rather than by Mplus (a note on the diagram says so); for now this covers single-group models with continuous outcomes, and other outputs (multiple groups, categorical outcomes, mixture, multilevel, Bayesian, Monte Carlo) are refused with the reason.
 
 ### Testing
 

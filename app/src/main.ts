@@ -4,7 +4,8 @@
  * keys. Owns `redraw()`, the single re-render entry point: it merges the
  * store's `positions` into the layout result, renders, re-wires node drag
  * and refits the viewBox. Loading a `.dgm` lays it out (`runLayout`) and
- * resets the undo history; a `.out` attaches p-values to the loaded graph.
+ * resets the undo history; a `.out` attaches p-values to the loaded graph,
+ * or, with no diagram loaded, opens as a diagram on its own.
  */
 import { loadDgmFile, loadOutFile, classifyFile } from './io/load.js';
 import { semEngine } from './layout/sem.js';
@@ -30,9 +31,18 @@ import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { DEMOS, type Demo } from './ui/demos.js';
 import { contentViewBox, formatViewBox, placeCaption, widenToFit } from './ui/viewBox.js';
-import { modelCaptions } from './model/caption.js';
+import { modelCaptions, OUT_ORIGIN_NOTE } from './model/caption.js';
+import { readOutModel } from './parser/outModel.js';
+import { buildGraph } from './model/graph.js';
 import { historySlice, useStore, type HistorySlice } from './state/store.js';
-import { restoredPositions, restoreSession, type SavedSession, type SaveState, type SessionStorage } from './state/autosave.js';
+import {
+  restoredPositions,
+  restoreSession,
+  type SavedSession,
+  type SaveState,
+  type SessionStorage,
+  type SourceKind,
+} from './state/autosave.js';
 import { AutosaveController } from './state/autosaveController.js';
 import type { TabChannel } from './state/autosaveTabs.js';
 import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
@@ -90,8 +100,8 @@ const autosave = storage
  * engine is laid out again (see `restore`).
  */
 const engineName = DEFAULT_LAYOUT_ENGINE;
-/** The loaded `.dgm`, kept so autosave can store its text. */
-let current: { fileName: string; dgmText: string } | null = null;
+/** The loaded file (a `.dgm`, or a `.out` opened on its own), kept so autosave can store its text. */
+let current: { fileName: string; dgmText: string; sourceKind: SourceKind } | null = null;
 /** Set by Discard, so no save lands between clearing the slot and the reload. */
 let discarding = false;
 /** Set when storage refused a save, so the warning is shown once per diagram. */
@@ -280,7 +290,7 @@ function saveNow(): void {
   window.clearTimeout(saveTimer);
   const state = saveState();
   if (!autosave || discarding || !current || !state) return;
-  const input = { fileName: current.fileName, dgmText: current.dgmText, state };
+  const input = { fileName: current.fileName, dgmText: current.dgmText, sourceKind: current.sourceKind, state };
   // Storage is full: free closed tabs' slots and try again, once per
   // diagram, then say so if it still fails. A save that goes through
   // re-arms the retry for a later refusal.
@@ -367,7 +377,7 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
     if (fileLoaded) return;
     installGraph(graph, placed, slice);
     redraw();
-    current = { fileName: session.fileName, dgmText: session.dgmText };
+    current = { fileName: session.fileName, dgmText: session.dgmText, sourceKind: session.sourceKind ?? 'dgm' };
     offered = null;
     saveRefused = false;
     autosave?.markSaved(saveState());
@@ -409,26 +419,22 @@ async function handleFile(file: File): Promise<boolean> {
   try {
     if (kind === 'dgm') {
       const { graph, text } = await loadDgmFile(file);
-      const layout = await computeLayout(graph);
-      // Set in the same step as the install, so a restore still in
-      // progress sees it and gives way; a load that failed never sets it.
-      installGraph(graph, layout);
-      fileLoaded = true;
-      current = { fileName: file.name, dgmText: text };
-      saveRefused = false;
-      offered = null;
+      await openDiagram(file.name, text, 'dgm', graph);
       notice.hidden = true;
-      // After a restore that failed, autosave stopped to keep the broken
-      // slot; a new file gets a new slot, so it is saved and the old one kept.
-      if (autosave?.isStopped && !discarding) await autosave.startFresh();
-      redraw();
-      dropzone.classList.add('hidden');
-      toast(`Loaded ${file.name}`);
       return true;
     } else if (kind === 'out') {
       if (!useStore.getState().graph) {
-        toast('Load a .dgm file before attaching a .out file.', true);
-        return false;
+        // Nothing loaded: open the .out as a diagram on its own.
+        const { text, pValues } = await loadOutFile(file);
+        const model = readOutModel(text);
+        if (!model.ok) {
+          toast(`Cannot open ${file.name}: ${model.message}`, true);
+          return false;
+        }
+        await openDiagram(file.name, text, 'out', buildGraph(model.dgm), { pValues });
+        const noEcho = model.echo ? '' : ' It has no input echo (NOECHO), so labels are not shown.';
+        showNotice(`${OUT_ORIGIN_NOTE}.${noEcho}`, 'opened');
+        return true;
       }
       const { pValues } = await loadOutFile(file);
       const graph = useStore.getState().graph;
@@ -449,6 +455,34 @@ async function handleFile(file: File): Promise<boolean> {
     toast(`Failed to load ${file.name}: ${(err as Error).message}`, true);
     return false;
   }
+}
+
+/**
+ * Make a newly loaded file the open diagram: lay it out and install it with
+ * `slice` (a `.out`'s p-values) as the undo baseline. Autosave then saves it
+ * with its text and source kind (`current`).
+ */
+async function openDiagram(
+  fileName: string,
+  text: string,
+  sourceKind: SourceKind,
+  graph: ModelGraph,
+  slice?: Partial<HistorySlice>,
+): Promise<void> {
+  const layout = await computeLayout(graph);
+  // Set in the same step as the install, so a restore still in
+  // progress sees it and gives way; a load that failed never sets it.
+  installGraph(graph, layout, slice);
+  fileLoaded = true;
+  current = { fileName, dgmText: text, sourceKind };
+  saveRefused = false;
+  offered = null;
+  // After a restore that failed, autosave stopped to keep the broken
+  // slot; a new file gets a new slot, so it is saved and the old one kept.
+  if (autosave?.isStopped && !discarding) await autosave.startFresh();
+  redraw();
+  dropzone.classList.add('hidden');
+  toast(`Loaded ${fileName}`);
 }
 
 let toastTimer: number | undefined;

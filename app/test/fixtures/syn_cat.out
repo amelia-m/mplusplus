@@ -1,0 +1,274 @@
+Mplus VERSION 8.11
+MUTHEN & MUTHEN
+11/04/2026   1:12 PM
+
+INPUT INSTRUCTIONS
+
+  TITLE: mplusplus synthetic fixture: one factor with binary items
+    (invented model and names; simulated data only)
+  DATA: FILE IS syn_cat.dat;
+  VARIABLE:
+    NAMES ARE u1 u2 u3 u4;
+    USEVARIABLES ARE u1 u2 u3 u4;
+    CATEGORICAL ARE u1 u2 u3 u4;
+  DEFINE:
+    CUT u1 u2 u3 u4 (0);
+  MODEL:
+    fu BY u1* u2 u3 u4;
+    fu@1;
+  OUTPUT: STANDARDIZED;
+
+
+
+INPUT READING TERMINATED NORMALLY
+
+
+
+mplusplus synthetic fixture: one factor with binary items
+(invented model and names; simulated data only)
+
+SUMMARY OF ANALYSIS
+
+Number of groups                                                 1
+Number of observations                                         400
+
+Number of dependent variables                                    4
+Number of independent variables                                  0
+Number of continuous latent variables                            1
+
+Observed dependent variables
+
+  Binary and ordered categorical (ordinal)
+   U1          U2          U3          U4
+
+Continuous latent variables
+   FU
+
+
+Estimator                                                    WLSMV
+Maximum number of iterations                                  1000
+Convergence criterion                                    0.500D-04
+Maximum number of steepest descent iterations                   20
+Parameterization                                             DELTA
+Link                                                        PROBIT
+
+Input data file(s)
+  syn_cat.dat
+
+Input data format  FREE
+
+
+UNIVARIATE PROPORTIONS AND COUNTS FOR CATEGORICAL VARIABLES
+
+    U1
+      Category 1    0.522          209.000
+      Category 2    0.477          191.000
+    U2
+      Category 1    0.502          201.000
+      Category 2    0.497          199.000
+    U3
+      Category 1    0.520          208.000
+      Category 2    0.480          192.000
+    U4
+      Category 1    0.520          208.000
+      Category 2    0.480          192.000
+
+
+
+THE MODEL ESTIMATION TERMINATED NORMALLY
+
+
+
+MODEL FIT INFORMATION
+
+Number of Free Parameters                        8
+
+Chi-Square Test of Model Fit
+
+          Value                              1.059*
+          Degrees of Freedom                     2
+          P-Value                           0.5890
+
+*   The chi-square value for MLM, MLMV, MLR, ULSMV, WLSM and WLSMV cannot be used
+    for chi-square difference testing in the regular way.  MLM, MLR and WLSM
+    chi-square difference testing is described on the Mplus website.  MLMV, WLSMV,
+    and ULSMV difference testing is done using the DIFFTEST option.
+
+RMSEA (Root Mean Square Error Of Approximation)
+
+          Estimate                           0.000
+          90 Percent C.I.                    0.000  0.082
+          Probability RMSEA <= .05           0.809
+
+CFI/TLI
+
+          CFI                                1.000
+          TLI                                1.000
+
+Chi-Square Test of Model Fit for the Baseline Model
+
+          Value                            187.604
+          Degrees of Freedom                     6
+          P-Value                           0.0000
+
+SRMR (Standardized Root Mean Square Residual)
+
+          Value                              0.015
+
+Optimum Function Value for Weighted Least-Squares Estimator
+
+          Value                     0.78703303D-03
+
+
+
+MODEL RESULTS
+
+                                                    Two-Tailed
+                    Estimate       S.E.  Est./S.E.    P-Value
+
+ FU       BY
+    U1                 0.806      0.076     10.550      0.000
+    U2                 0.590      0.072      8.148      0.000
+    U3                 0.609      0.073      8.364      0.000
+    U4                 0.500      0.074      6.720      0.000
+
+ Thresholds
+    U1$1               0.056      0.063      0.900      0.368
+    U2$1               0.006      0.063      0.100      0.920
+    U3$1               0.050      0.063      0.800      0.424
+    U4$1               0.050      0.063      0.800      0.424
+
+ Variances
+    FU                 1.000      0.000    999.000    999.000
+
+
+QUALITY OF NUMERICAL RESULTS
+
+     Condition Number for the Information Matrix              0.207E+00
+       (ratio of smallest to largest eigenvalue)
+
+
+IRT PARAMETERIZATION
+
+                                                    Two-Tailed
+                    Estimate       S.E.  Est./S.E.    P-Value
+
+ Item Discriminations
+
+ FU       BY
+    U1                 1.364      0.370      3.688      0.000
+    U2                 0.732      0.138      5.307      0.000
+    U3                 0.768      0.146      5.263      0.000
+    U4                 0.578      0.115      5.038      0.000
+
+ Item Difficulties
+    U1$1               0.070      0.078      0.897      0.370
+    U2$1               0.011      0.106      0.100      0.920
+    U3$1               0.082      0.103      0.797      0.426
+    U4$1               0.100      0.126      0.794      0.427
+
+ Variances
+    FU                 1.000      0.000      0.000      1.000
+
+
+STANDARDIZED MODEL RESULTS
+
+
+STDYX Standardization
+
+                                                    Two-Tailed
+                    Estimate       S.E.  Est./S.E.    P-Value
+
+ FU       BY
+    U1                 0.806      0.076     10.550      0.000
+    U2                 0.590      0.072      8.148      0.000
+    U3                 0.609      0.073      8.364      0.000
+    U4                 0.500      0.074      6.720      0.000
+
+ Thresholds
+    U1$1               0.056      0.063      0.900      0.368
+    U2$1               0.006      0.063      0.100      0.920
+    U3$1               0.050      0.063      0.800      0.424
+    U4$1               0.050      0.063      0.800      0.424
+
+ Variances
+    FU                 1.000      0.000    999.000    999.000
+
+
+STDY Standardization
+
+                                                    Two-Tailed
+                    Estimate       S.E.  Est./S.E.    P-Value
+
+ FU       BY
+    U1                 0.806      0.076     10.550      0.000
+    U2                 0.590      0.072      8.148      0.000
+    U3                 0.609      0.073      8.364      0.000
+    U4                 0.500      0.074      6.720      0.000
+
+ Thresholds
+    U1$1               0.056      0.063      0.900      0.368
+    U2$1               0.006      0.063      0.100      0.920
+    U3$1               0.050      0.063      0.800      0.424
+    U4$1               0.050      0.063      0.800      0.424
+
+ Variances
+    FU                 1.000      0.000    999.000    999.000
+
+
+STD Standardization
+
+                                                    Two-Tailed
+                    Estimate       S.E.  Est./S.E.    P-Value
+
+ FU       BY
+    U1                 0.806      0.076     10.550      0.000
+    U2                 0.590      0.072      8.148      0.000
+    U3                 0.609      0.073      8.364      0.000
+    U4                 0.500      0.074      6.720      0.000
+
+ Thresholds
+    U1$1               0.056      0.063      0.900      0.368
+    U2$1               0.006      0.063      0.100      0.920
+    U3$1               0.050      0.063      0.800      0.424
+    U4$1               0.050      0.063      0.800      0.424
+
+ Variances
+    FU                 1.000      0.000    999.000    999.000
+
+
+R-SQUARE
+
+    Observed                                        Two-Tailed   Residual
+    Variable        Estimate       S.E.  Est./S.E.    P-Value    Variance
+
+    U1                 0.650      0.123      5.275      0.000      0.350
+    U2                 0.349      0.086      4.074      0.000      0.651
+    U3                 0.371      0.089      4.182      0.000      0.629
+    U4                 0.250      0.075      3.360      0.001      0.750
+
+
+DIAGRAM INFORMATION
+
+  Use View Diagram under the Diagram menu in the Mplus Editor to view the diagram.
+  If running Mplus from the Mplus Diagrammer, the diagram opens automatically.
+
+  Diagram output
+    syn_cat.dgm
+
+     Beginning Time:  13:12:25
+        Ending Time:  13:12:25
+       Elapsed Time:  00:00:00
+
+
+
+MUTHEN & MUTHEN
+3463 Stoner Ave.
+Los Angeles, CA  90066
+
+Tel: (310) 391-9971
+Fax: (310) 391-8971
+Web: www.StatModel.com
+Support: Support@StatModel.com
+
+Copyright (c) 1998-2024 Muthen & Muthen
