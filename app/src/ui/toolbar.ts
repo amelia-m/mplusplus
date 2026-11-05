@@ -1,5 +1,6 @@
 /**
- * Header toolbar: align and distribute the selected nodes, rotate or flip
+ * Header toolbar: open a recent autosaved diagram (`ui/recentMenu.ts`,
+ * when the `recent` hooks are given), align and distribute the selected nodes, rotate or flip
  * the selection or the whole diagram and grow a selection of factors to
  * their measurement blocks (`render/arrange.ts`), undo and redo (through
  * `state/history.ts`), re-run the layout, export (`render/export.ts`, when
@@ -11,6 +12,7 @@ import type { TransformOp } from '../layout/transform.js';
 import type { ExportKind } from '../render/export.js';
 import { redoHistory, undoHistory } from '../state/history.js';
 import { nextTheme, parseTheme, themeLabel, THEME_KEY, type ThemeChoice } from './theme.js';
+import { mountRecentMenu, type RecentMenuHooks } from './recentMenu.js';
 
 const SELECT_BLOCK_MESSAGES = {
   'no-selection': 'Select a factor first: Select block adds what it measures.',
@@ -28,6 +30,11 @@ export interface ToolbarHooks {
    * Export group is not shown.
    */
   onExport?(kind: ExportKind): void;
+  /**
+   * The Open recent menu's hooks (`ui/recentMenu.ts`). Without them (no
+   * browser storage, so nothing is kept) the Recent group is not shown.
+   */
+  recent?: RecentMenuHooks;
 }
 
 export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
@@ -70,6 +77,7 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
     return wrap;
   };
 
+  if (hooks.recent) host.append(group('Recent', mountRecentMenu(hooks.recent)));
   host.append(
     group(
       'Align',
