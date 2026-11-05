@@ -225,14 +225,29 @@ const RESIDUAL_SIDES: [ResidualSideChoice, string][] = [
   ['right', 'Right'],
   ['bottom', 'Bottom'],
   ['left', 'Left'],
+  ['mixed', 'Mixed'],
 ];
 
-/** Which side the selected variables' residuals go on, for all of them at once (Amelia, 2026-11-03). */
+/**
+ * Which side the selected variables' residuals go on, for all of them at
+ * once (Amelia, 2026-11-03). "Mixed" is shown when they differ, and cannot
+ * be chosen; choosing a side then applies it to all of them.
+ */
 function buildResidualPanel(ids: string[], redraw: Redraw): Row<ResidualSideChoice> {
-  const side = selectRow('Side', RESIDUAL_SIDES, (v) => {
-    useStore.getState().setResidualSides(ids, v === '' ? null : v);
-    redraw();
-  });
+  const side = selectRow(
+    'Side',
+    RESIDUAL_SIDES,
+    (v) => {
+      if (v === 'mixed') return;
+      useStore.getState().setResidualSides(ids, v === '' ? null : v);
+      redraw();
+      // A choice that changed nothing (Layout default over sides that are
+      // all the layout's but differ) fires no store update, so show the
+      // state again here rather than leave the select on the choice.
+      side.set(residualSideChoice(useStore.getState(), ids));
+    },
+    new Set<ResidualSideChoice>(['mixed']),
+  );
   return panelOf(`Residuals (${ids.length})`, [side]);
 }
 
@@ -324,12 +339,15 @@ function selectRow<V extends string>(
   label: string,
   options: [V, string][],
   onChange: (v: V) => void,
+  /** Values that can be shown but not chosen. */
+  shownOnly: ReadonlySet<V> = new Set(),
 ): Row<V> {
   const sel = document.createElement('select');
   for (const [val, text] of options) {
     const opt = document.createElement('option');
     opt.value = val;
     opt.textContent = text;
+    opt.disabled = shownOnly.has(val);
     sel.append(opt);
   }
   sel.addEventListener('change', () => {
