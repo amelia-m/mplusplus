@@ -1,6 +1,6 @@
 /**
  * Global controls strip: coefficient mode, display (coefficients, SE, 95%
- * limits, covariance values) and decimals, magnitude
+ * limits, covariance values), decimals and label overlap avoidance, magnitude
  * scaling, significance alpha and p-value source, and a reset of all style
  * overrides. Edits `GlobalStyle` in the store.
  */
@@ -85,6 +85,7 @@ export function mountGlobalPanel(host: HTMLElement, hooks: GlobalPanelHooks): vo
       add(limitsControl),
       add(checkboxControl('Covariances', 'showCovarianceLabels', set)),
       add(numberControl('Decimals', 'decimals', { min: 0, max: 6, integer: true }, 1, set)),
+      add(checkboxControl('Avoid label overlaps', 'avoidLabelOverlaps', set)),
     ]),
     group('Magnitude', [
       add(checkboxControl('Scale by |coef|', 'magnitudeScaling', set)),

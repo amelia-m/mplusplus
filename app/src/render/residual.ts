@@ -74,6 +74,8 @@ export function residualGeometry(
 export interface CurveGeometry {
   /** SVG path data, a quadratic Bezier from `a` to `b`. */
   d: string;
+  a: Point;
+  b: Point;
   control: Point;
   /** Point on the curve halfway along, for the value label. */
   mid: Point;
@@ -104,7 +106,7 @@ export function curveGeometry(a: Point, b: Point, side: Side): CurveGeometry {
 }
 
 function quadratic(a: Point, control: Point, b: Point): CurveGeometry {
-  return { d: `M ${a.x} ${a.y} Q ${control.x} ${control.y} ${b.x} ${b.y}`, control, mid: quadraticAt(a, control, b, 0.5) };
+  return { d: `M ${a.x} ${a.y} Q ${control.x} ${control.y} ${b.x} ${b.y}`, a, b, control, mid: quadraticAt(a, control, b, 0.5) };
 }
 
 /** Point at `t` (0 to 1) along the quadratic curve from `a` to `b`. */
