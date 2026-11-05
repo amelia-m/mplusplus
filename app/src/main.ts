@@ -27,7 +27,7 @@ import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
 import { mountInspector } from './ui/inspector.js';
 import { classifyHistoryKey } from './ui/historyKeys.js';
-import { countMatchedPValues } from './ui/pValueMatch.js';
+import { countMatchedPValues, countPValueEdges, mplusTitle, outAttachNote } from './ui/pValueMatch.js';
 import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { DEMOS, type Demo } from './ui/demos.js';
@@ -374,8 +374,13 @@ async function startAutosave(controller: AutosaveController): Promise<void> {
 
 if (autosave) void startAutosave(autosave);
 
-/** Show `text` in the notice bar, with Discard for a restored diagram or Open for an offered one. */
-function showNotice(text: string, kind: 'restored' | 'offer' | 'opened'): void {
+/**
+ * Show `text` in the notice bar, with Discard for a restored diagram or Open
+ * for an offered one; `warning` styles it as a warning (a `.out` that may be
+ * from another model).
+ */
+function showNotice(text: string, kind: 'restored' | 'offer' | 'opened', warning = false): void {
+  notice.classList.toggle('warning', warning);
   document.querySelector('#notice-text')!.textContent = text;
   document.querySelector<HTMLButtonElement>('#notice-discard')!.hidden = kind !== 'restored';
   document.querySelector<HTMLButtonElement>('#notice-open')!.hidden = kind !== 'offer';
@@ -474,16 +479,29 @@ async function loadFile(file: File): Promise<boolean> {
         showNotice(`${OUT_ORIGIN_NOTE}.${noEcho}`, 'opened');
         return true;
       }
-      const { pValues } = await loadOutFile(file);
+      const { text, pValues } = await loadOutFile(file);
       const graph = useStore.getState().graph;
       const n = graph ? countMatchedPValues(pValues, graph) : 0;
       if (n === 0) {
         toast(`No p-values in ${file.name} match an edge in this diagram.`, true);
         return false;
       }
+      // One undo entry (pValues is in the history), so "Undo removes them"
+      // holds; none when the same values were already there.
+      const before = useStore.getState().pValues;
       useStore.getState().setPValues(pValues);
+      const changed = useStore.getState().pValues !== before;
       redraw();
-      toast(`Attached p-values from ${file.name} (${n} edges).`);
+      const note = outAttachNote({
+        outName: file.name,
+        diagramName: current?.fileName ?? 'this diagram',
+        matched: n,
+        attachable: graph ? countPValueEdges(graph) : n,
+        outTitle: mplusTitle(text, 'out'),
+        diagramTitle: current ? mplusTitle(current.dgmText, current.sourceKind) : null,
+        changed,
+      });
+      showNotice(note.text, 'opened', note.warning);
       return true;
     }
     toast('Unknown file type. Expected .dgm or .out.', true);
