@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { computeSignificanceInputs, edgeLabelShown, formatLabel, nodeShapeSpec } from './svg.js';
+import {
+  arrowheadBox,
+  computeDiagramLabels,
+  computeSignificanceInputs,
+  edgeLabelShown,
+  formatLabel,
+  nodeShapeSpec,
+  residualLabelId,
+  type DiagramLabels,
+} from './svg.js';
 import { DEFAULT_GLOBAL_STYLE, type GlobalStyle } from './styles.js';
 import { buildGraph, type GraphEdge } from '../model/graph.js';
 import { parseDgm } from '../parser/dgm.js';
+import { placeSem } from '../layout/sem.js';
+import { labelBoxAt, overlapArea, pointOnPath, T_MAX, T_MIN } from './labelPlacement.js';
+import type { Box } from './geometry.js';
 
 // syn_cint.dgm: the synthetic syn_sem model run with OUTPUT: CINTERVAL (Mplus 8.11).
 const cint = buildGraph(parseDgm(readFileSync(resolve(__dirname, '../../../dgm/syn_cint.dgm'), 'utf8')));
@@ -83,6 +95,104 @@ describe('nodeShapeSpec (R5)', () => {
   it('describes the ellipse and diamond geometry for the node box', () => {
     expect(nodeShapeSpec('ellipse', 120, 56).attrs).toEqual({ cx: 60, cy: 28, rx: 60, ry: 28 });
     expect(nodeShapeSpec('diamond', 120, 56).attrs).toEqual({ points: '60,0 120,28 60,56 0,28' });
+  });
+});
+
+describe('label collision pass (avoidLabelOverlaps)', () => {
+  const fixture = (name: string) => {
+    const graph = buildGraph(parseDgm(readFileSync(resolve(__dirname, `../../../dgm/${name}.dgm`), 'utf8')));
+    return { graph, layout: placeSem(graph, 120, 56) };
+  };
+  const labelsOf = (name: string, avoidLabelOverlaps: boolean): DiagramLabels =>
+    computeDiagramLabels({
+      ...fixture(name),
+      global: { ...DEFAULT_GLOBAL_STYLE, avoidLabelOverlaps },
+      edgeStyles: {},
+      nodeStyles: {},
+      pValues: {},
+      nodeSelection: new Set(),
+      edgeSelection: new Set(),
+    });
+  const boxes = (d: DiagramLabels): Map<string, Box> => new Map(d.labels.map((l) => [l.id, labelBoxAt(l, d.offsets.get(l.id)!)]));
+  const overlappingPairs = (d: DiagramLabels): string[] => {
+    const b = Array.from(boxes(d));
+    return b.flatMap(([id, p], i) => b.slice(i + 1).filter(([, q]) => overlapArea(p, q) > 0).map(([jd]) => `${id} x ${jd}`));
+  };
+  /** Arrowheads at both ends of each covariance curve, from the curve's own label path. */
+  const curveEnds = (d: DiagramLabels): Box[] =>
+    d.labels.flatMap((l) =>
+      l.kind === 'path' && l.path.kind === 'quadratic'
+        ? [arrowheadBox(l.path.a, l.path.control), arrowheadBox(l.path.b, l.path.control)]
+        : [],
+    );
+  const valuesOnCurveEnds = (d: DiagramLabels): string[] => {
+    const ends = curveEnds(d);
+    return Array.from(boxes(d))
+      .filter(([id, b]) => id.startsWith('res:') && ends.some((e) => overlapArea(b, e) > 0))
+      .map(([id]) => id)
+      .sort();
+  };
+
+  it.each(['syn_sem', 'syn_path'])('leaves no two label boxes overlapping in %s', (name) => {
+    expect(overlappingPairs(labelsOf(name, true))).toEqual([]);
+  });
+
+  it('separates the fanned loading labels of syn_sem, which overlap without the pass', () => {
+    expect(overlappingPairs(labelsOf('syn_sem', false))).toContain('edge:BY:fa->a1 x edge:BY:fa->a2');
+  });
+
+  it.each([
+    ['syn_sem', ['x1', 'x2', 'c4']],
+    ['syn_path', ['d1', 'd2']],
+  ])('moves the residual values of %s off covariance curve ends (seen 2026-11-02: %j)', (name, ids) => {
+    const before = valuesOnCurveEnds(labelsOf(name, false));
+    expect(before).toEqual(expect.arrayContaining(ids.map(residualLabelId)));
+    expect(valuesOnCurveEnds(labelsOf(name, true))).toEqual([]);
+  });
+
+  it('keeps every label where it was with the toggle off', () => {
+    for (const name of ['syn_sem', 'syn_path']) {
+      const d = labelsOf(name, false);
+      expect(d.labels.length).toBeGreaterThan(0);
+      for (const l of d.labels) expect(d.offsets.get(l.id)).toEqual({ x: 0, y: 0 });
+    }
+  });
+
+  it('keeps each coefficient label on its own path, between t 0.2 and 0.8 when moved', () => {
+    const d = labelsOf('syn_sem', true);
+    let moved = 0;
+    for (const l of d.labels) {
+      if (l.kind !== 'path') continue;
+      const t = d.t.get(l.id)!;
+      const o = d.offsets.get(l.id)!;
+      const base = pointOnPath(l.path, l.t0);
+      const at = pointOnPath(l.path, t);
+      expect(base.x + o.x).toBeCloseTo(at.x, 9);
+      expect(base.y + o.y).toBeCloseTo(at.y, 9);
+      if (t !== l.t0) {
+        moved++;
+        expect(t).toBeGreaterThanOrEqual(T_MIN);
+        expect(t).toBeLessThanOrEqual(T_MAX);
+      }
+    }
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it('leaves out hidden values, keeping only the constraint labels, which stay drawn', () => {
+    const { graph, layout } = fixture('syn_sem');
+    const constrained = graph.edges.filter((e) => e.constraint).map((e) => `edge:${e.id}`);
+    expect(constrained.length).toBeGreaterThan(0);
+    const d = computeDiagramLabels({
+      graph,
+      layout,
+      global: { ...DEFAULT_GLOBAL_STYLE, showCoefficients: false },
+      edgeStyles: {},
+      nodeStyles: {},
+      pValues: {},
+      nodeSelection: new Set(),
+      edgeSelection: new Set(),
+    });
+    expect(d.labels.map((l) => l.id).sort()).toEqual(constrained.sort());
   });
 });
 

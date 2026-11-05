@@ -115,6 +115,8 @@ export interface GlobalStyle {
   nsStrokeWidth: number;
   alpha: 0.05 | 0.01;
   pSource: 'auto' | 'tstat' | 'pvalue';
+  /** Slide coefficient labels and residual values clear of each other (`render/labelPlacement.ts`). */
+  avoidLabelOverlaps: boolean;
 }
 
 export const DEFAULT_GLOBAL_STYLE: GlobalStyle = {
@@ -134,6 +136,8 @@ export const DEFAULT_GLOBAL_STYLE: GlobalStyle = {
   nsStrokeWidth: 1,
   alpha: 0.05,
   pSource: 'auto',
+  // Amelia, 2026-11-03: on by default, off in parity mode (not built yet).
+  avoidLabelOverlaps: true,
 };
 
 export function defaultNodeStyle(kind: GraphNode['kind']): NodeStyle {
