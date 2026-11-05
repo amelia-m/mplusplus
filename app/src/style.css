@@ -18,6 +18,11 @@
   --notice: #eff6ff;
   --notice-border: #bfdbfe;
   --notice-fg: #1e3a8a;
+  /* A notice or note that warns (a .out that may be from another model, a
+     PDF exported without its provenance). */
+  --warn: #fffbeb;
+  --warn-border: #f59e0b;
+  --warn-fg: #78350f;
   /* The diagram's sheet: white in both themes, since the diagram's colors
      are the user's styles and what an export shows. */
   --canvas: #ffffff;
@@ -48,6 +53,9 @@
     --notice: #172554;
     --notice-border: #1e40af;
     --notice-fg: #dbeafe;
+    --warn: #3a2a05;
+    --warn-border: #b45309;
+    --warn-fg: #fde68a;
   }
 }
 
@@ -71,6 +79,9 @@
   --notice: #172554;
   --notice-border: #1e40af;
   --notice-fg: #dbeafe;
+  --warn: #3a2a05;
+  --warn-border: #b45309;
+  --warn-fg: #fde68a;
 }
 
 * { box-sizing: border-box; }
@@ -288,6 +299,12 @@ html, body {
 
 .notice[hidden] { display: none; }
 
+.notice.warning {
+  background: var(--warn);
+  border-color: var(--warn-border);
+  color: var(--warn-fg);
+}
+
 .main-area {
   flex: 1;
   min-height: 0;
@@ -456,6 +473,17 @@ g.edge.selected path.edge-path {
   display: block;
   margin: 4px 0;
 }
+
+.export-warning {
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: var(--warn);
+  border: 1px solid var(--warn-border);
+  border-radius: 4px;
+  color: var(--warn-fg);
+}
+
+.export-warning[hidden] { display: none; }
 
 .export-buttons {
   display: flex;
