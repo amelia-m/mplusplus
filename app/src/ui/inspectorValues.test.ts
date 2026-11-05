@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  displayNameField,
   edgeInspectorStyle,
   nodeInspectorStyle,
   residualIds,
@@ -90,6 +91,16 @@ describe('inspector shows the effective style (Z5)', () => {
   it('returns null with nothing selected or an unknown id', () => {
     expect(nodeInspectorStyle(source())).toBeNull();
     expect(edgeInspectorStyle(source({ edgeSelection: new Set(['ON:q->r']) }))).toBeNull();
+  });
+});
+
+describe('display name field', () => {
+  it('shows the first node\'s Mplus name and stored display name, editable for one node only', () => {
+    const one = displayNameField(source({ selection: new Set(['f']), nodeStyles: { f: { displayName: 'Factor' } } }));
+    expect(one).toEqual({ id: 'f', mplusName: 'F', value: 'Factor', editable: true });
+    const two = displayNameField(source({ selection: new Set(['x', 'f']) }));
+    expect(two).toEqual({ id: 'x', mplusName: 'X', value: '', editable: false });
+    expect(displayNameField(source())).toBeNull();
   });
 });
 

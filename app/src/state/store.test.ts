@@ -3,6 +3,7 @@ import { HISTORY_LIMIT, historyEqual, historySlice, useStore, type NodePosition 
 import { beginGesture, endActiveGesture, endGesture, isGestureActive, onGestureEnd } from './gesture.js';
 import { redoHistory, undoHistory } from './history.js';
 import { alignSelected } from '../render/align.js';
+import { displayNamePatch } from '../render/styles.js';
 
 // Same cast shape the app uses: zundo attaches `temporal` as a sibling store.
 const temporal = (useStore as unknown as {
@@ -388,6 +389,34 @@ describe('empty style overrides are never stored (F2.7)', () => {
   it('keeps an override whose value equals the default, since it pins the value', () => {
     useStore.getState().setNodeStyles(['a'], { shape: null });
     expect(useStore.getState().nodeStyles).toEqual({ a: { shape: null } });
+  });
+});
+
+describe('display names in the store (Amelia, 2026-11-03)', () => {
+  const a = { label: 'A' };
+  beforeEach(() => {
+    useStore.setState({ nodeStyles: {}, edgeStyles: {} });
+    temporal.getState().clear();
+  });
+
+  it('records one committed name as one undo entry, and an empty or equal name stores nothing', () => {
+    useStore.getState().setNodeStyles(['a'], displayNamePatch(a, 'Alpha'));
+    expect(useStore.getState().nodeStyles).toEqual({ a: { displayName: 'Alpha' } });
+    expect(past()).toBe(1);
+    // Clearing the name (empty, or Mplus's own) deletes the override.
+    useStore.getState().setNodeStyles(['a'], displayNamePatch(a, ' A '));
+    expect(useStore.getState().nodeStyles).toEqual({});
+    expect(past()).toBe(2);
+    useStore.getState().setNodeStyles(['a'], displayNamePatch(a, '  '));
+    expect(past()).toBe(2);
+  });
+
+  it('Reset styles clears display names, and undo brings them back', () => {
+    useStore.getState().setNodeStyles(['a'], displayNamePatch(a, 'Alpha'));
+    useStore.getState().resetStyles();
+    expect(useStore.getState().nodeStyles).toEqual({});
+    undoHistory();
+    expect(useStore.getState().nodeStyles).toEqual({ a: { displayName: 'Alpha' } });
   });
 });
 

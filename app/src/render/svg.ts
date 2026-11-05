@@ -13,6 +13,7 @@ import {
   effectiveEdgeStyle,
   effectiveNodeStyle,
   activeEstimate,
+  nodeLabelText,
   strokeDashArray,
   type EdgeStyle,
   type NodeShape,
@@ -252,7 +253,7 @@ function renderNodes(nodesG: GroupSelection, state: RenderState): void {
       .attr('font-family', style.labelFontFamily)
       .attr('font-size', style.labelFontSize)
       .attr('fill', style.labelFontColor)
-      .text(d.label);
+      .text(nodeLabelText(d, style));
 
     g.classed('selected', state.nodeSelection.has(d.id));
   });

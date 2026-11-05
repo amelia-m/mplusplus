@@ -18,6 +18,7 @@ import { useStore, type AppState } from '../state/store.js';
 import { isGestureActive, onGestureEnd } from '../state/gesture.js';
 import {
   FONT_FAMILIES,
+  displayNamePatch,
   type EdgeStyle,
   type EdgeStyleOverride,
   type NodeShape,
@@ -27,6 +28,7 @@ import {
   type ArrowheadStyle,
 } from '../render/styles.js';
 import {
+  displayNameField,
   edgeInspectorStyle,
   nodeInspectorStyle,
   residualIds,
@@ -178,6 +180,7 @@ function buildNodePanel(ids: string[], redraw: Redraw): Row<NodeStyle> {
     redraw();
   };
   return panelOf<NodeStyle>(`Nodes (${ids.length})`, [
+    ...displayNameRows(redraw),
     bind(colorRow('Fill', (v) => commit({ fill: v })), (s) => s.fill),
     bind(colorRow('Stroke', (v) => commit({ stroke: v })), (s) => s.stroke),
     bind(
@@ -215,6 +218,53 @@ function buildNodePanel(ids: string[], redraw: Redraw): Row<NodeStyle> {
       (s) => s.labelFontColor,
     ),
   ]);
+}
+
+/**
+ * A read-only Mplus name and an editable Display name for the first selected
+ * node (Amelia, 2026-11-02 and 2026-11-03). The name commits on `change`
+ * (Enter or leaving the field), so one typed name is one undo entry. With
+ * more than one node selected the field is disabled: a name belongs to one
+ * variable. Empty, whitespace-only or Mplus's own name stores nothing
+ * (`displayNamePatch`).
+ */
+function displayNameRows(redraw: Redraw): Row<NodeStyle>[] {
+  const field = displayNameField(useStore.getState());
+  if (!field) return [];
+  const node = { id: field.id, label: field.mplusName };
+
+  const mplus = document.createElement('span');
+  mplus.textContent = field.editable ? field.mplusName : `${field.mplusName} (first selected)`;
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = field.mplusName;
+  inp.disabled = !field.editable;
+  inp.title = field.editable
+    ? 'Drawn instead of the Mplus name; empty uses the Mplus name'
+    : 'Select one variable to change its display name';
+  inp.setAttribute('aria-label', 'Display name');
+  const showStored = (): void => {
+    inp.value = useStore.getState().nodeStyles[node.id]?.displayName ?? '';
+  };
+  inp.addEventListener('change', () => {
+    useStore.getState().setNodeStyles([node.id], displayNamePatch(node, inp.value));
+    redraw();
+    // Show the name as stored: trimmed, or empty when it equals Mplus's
+    // (a commit that changes nothing fires no store update).
+    showStored();
+  });
+
+  return [
+    { el: row('Mplus name', mplus), set: () => {} },
+    {
+      el: row('Display name', inp),
+      set: (s) => {
+        // Never replace text the user is typing; it commits on change.
+        if (document.activeElement !== inp) inp.value = s.displayName ?? '';
+      },
+    },
+  ];
 }
 
 // ----------------- residual panel -----------------

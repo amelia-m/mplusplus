@@ -37,6 +37,13 @@ export interface NodeStyle {
   labelFontFamily: string;
   labelFontSize: number;
   labelFontColor: string;
+  /**
+   * The name drawn for the variable, `null` = Mplus's own name (the node's
+   * `label`). Only the drawn text changes: the node id stays Mplus's name,
+   * so `.out` matching and estimates are unaffected (Amelia, 2026-11-02 and
+   * 2026-11-03). Set it through `displayNamePatch`.
+   */
+  displayName: string | null;
 }
 
 export type EdgeStyleOverride = Partial<EdgeStyle>;
@@ -73,6 +80,7 @@ export const DEFAULT_NODE_STYLE_LATENT: NodeStyle = {
   labelFontFamily: 'system-ui',
   labelFontSize: 13,
   labelFontColor: '#111111',
+  displayName: null,
 };
 
 export const DEFAULT_NODE_STYLE_OBSERVED: NodeStyle = {
@@ -84,6 +92,7 @@ export const DEFAULT_NODE_STYLE_OBSERVED: NodeStyle = {
   labelFontFamily: 'system-ui',
   labelFontSize: 13,
   labelFontColor: '#111111',
+  displayName: null,
 };
 
 export interface GlobalStyle {
@@ -182,6 +191,47 @@ export function effectiveNodeStyle(
 ): NodeStyle {
   const base = defaultNodeStyle(node.kind);
   return override ? { ...base, ...override } : base;
+}
+
+// ---- display names (aliases) ----
+
+/** The text drawn for a node: its display name, else Mplus's name. */
+export function nodeLabelText(node: Pick<GraphNode, 'label'>, style: Pick<NodeStyle, 'displayName'>): string {
+  return style.displayName ?? node.label;
+}
+
+/**
+ * The style patch for a display name typed for `node`. Surrounding
+ * whitespace is dropped; an empty name, or one equal to Mplus's name
+ * (case-sensitive, since changing case is an alias too), means "use the
+ * Mplus name" and clears the field, so nothing is stored for it.
+ */
+export function displayNamePatch(node: Pick<GraphNode, 'label'>, typed: string): NodeStyleOverride {
+  const name = typed.trim();
+  return { displayName: name === '' || name === node.label ? undefined : name };
+}
+
+/** A renamed variable, as the export's provenance lists it. */
+export interface DisplayNamePair {
+  displayName: string;
+  mplusName: string;
+}
+
+/**
+ * The variables drawn under a name other than Mplus's, in graph order; a
+ * stored name equal to Mplus's (which `displayNamePatch` never stores) is
+ * left out too.
+ */
+export function displayNamePairs(
+  nodes: readonly Pick<GraphNode, 'id' | 'label'>[],
+  nodeStyles: Record<string, NodeStyleOverride>,
+): DisplayNamePair[] {
+  const pairs: DisplayNamePair[] = [];
+  for (const n of nodes) {
+    const name = nodeStyles[n.id]?.displayName;
+    if (name != null && name !== n.label) pairs.push({ displayName: name, mplusName: n.label });
+  }
+  return pairs;
 }
 
 /**
