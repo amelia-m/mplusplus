@@ -3,7 +3,8 @@
  * inspector, and wires selection, file drop and pick, and the undo/redo
  * keys. Owns `redraw()`, the single re-render entry point: it merges the
  * store's `positions` into the layout result, renders, re-wires node drag
- * and refits the viewBox. Loading a `.dgm` lays it out (`runLayout`) and
+ * and shows the view (`updateView`: zoom and pan, fitted on load, restore,
+ * Re-run layout and the Fit button only). Loading a `.dgm` lays it out (`runLayout`) and
  * resets the undo history; a `.out` attaches p-values to the loaded graph,
  * or, with no diagram loaded, opens as a diagram on its own.
  */
@@ -23,6 +24,7 @@ import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
 import { curveLabelHalfWidth, overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
 import { DEFAULT_EDGE_STYLE } from './render/styles.js';
 import { wireSelection } from './render/selection.js';
+import { elementSize, ViewController, wireZoom } from './render/zoom.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
 import { mountInspector } from './ui/inspector.js';
@@ -47,7 +49,7 @@ import {
 } from './state/autosave.js';
 import { AutosaveController } from './state/autosaveController.js';
 import type { TabChannel } from './state/autosaveTabs.js';
-import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
+import { endActiveGesture } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
 import type { LayoutResult } from './layout/index.js';
@@ -158,7 +160,24 @@ const toastHost = document.querySelector<HTMLDivElement>('#toast')!;
 const notice = document.querySelector<HTMLDivElement>('#notice')!;
 
 const { edgesG, nodesG, captionG, marqueeG, defsG } = setupSvg(svg);
-fitViewBox();
+/**
+ * The canvas view: zoom, pan and when to fit (`render/zoom.ts`). It is a
+ * view, not the diagram, so it is neither undoable nor autosaved; a restored
+ * diagram is fitted.
+ */
+const view = new ViewController();
+/**
+ * The residual and curve geometry last drawn by `redraw`, so the content box
+ * is worked out from what is on the canvas, the same way on every call.
+ */
+let lastOverlay: OverlayGeometry | undefined;
+/**
+ * The canvas's size in CSS pixels, kept by the ResizeObserver below so a
+ * redraw (every move of a drag) does not force a layout to measure it.
+ */
+let canvasSize = elementSize(svg);
+
+updateView();
 
 /** Lay the loaded model out again (Re-run layout). */
 function relayout(): void {
@@ -175,13 +194,17 @@ function relayout(): void {
 mountToolbar(toolbarHost, {
   onRedraw: redraw,
   onRelayout: relayout,
+  onFit: () => {
+    view.requestFit();
+    updateView();
+  },
   onMessage: (text) => toast(text),
   onExport: (kind) => {
     const s = useStore.getState();
     const source =
       current && s.graph
         ? {
-            svg,
+            svg: canvasForExport(),
             fileName: current.fileName,
             fileText: current.dgmText,
             coefficientMode: s.global.coefMode,
@@ -209,7 +232,21 @@ mountToolbar(toolbarHost, {
 mountGlobalPanel(globalHost, { onRedraw: redraw });
 mountInspector(inspectorHost, redraw);
 
-wireSelection(svg, marqueeG, redraw);
+const selection = wireSelection(svg, marqueeG, redraw);
+wireZoom(svg, view, {
+  apply: (vb) => svg.setAttribute('viewBox', formatViewBox(vb)),
+  // Two fingers pan and zoom: a selection box or node drag stops. Positions
+  // a drag already wrote stay, and are drawn, so nothing needs redrawing.
+  stopOneFingerGestures: () => {
+    selection.cancelMarquee();
+    cancelNodeDrag();
+  },
+});
+// A resized canvas keeps its zoom and center (`resizeView`).
+new ResizeObserver(() => {
+  canvasSize = elementSize(svg);
+  updateView();
+}).observe(svg);
 
 dropzone.addEventListener('click', (e) => {
   // A click in the demo list opens a demo or a download, not the file picker.
@@ -302,10 +339,6 @@ window.addEventListener('keydown', (e) => {
   // Refused (returns false) in the middle of a drag or scrub.
   if (action === 'undo' ? undoHistory() : redoHistory()) redraw();
 });
-
-// The viewBox is frozen while a gesture is active (see `fitViewBox`), so
-// refit once it ends.
-onGestureEnd(() => fitViewBox());
 
 // Autosave: every store change schedules a save of the open diagram, so a
 // burst of changes (a drag) writes once.
@@ -647,32 +680,46 @@ function redraw(): void {
   };
   const overlay = renderGraph(edgesG, nodesG, defsG as Selection<SVGDefsElement, unknown, null, undefined>, state);
   wireNodeDrag(nodesG as GroupSelection, redraw);
-  fitViewBox(overlay);
+  updateView(overlay);
 }
 
 /**
- * Fit the canvas viewBox to the merged node positions and edge bend points
- * plus padding. It is left alone while a gesture is active: changing the
- * viewBox mid-drag would change the pointer-to-diagram mapping under the
- * pointer, so the dragged node would drift from the grab point. `onGestureEnd` refits afterwards.
- * `overlay` is the residual and curve geometry just drawn, when the caller
- * has it; otherwise it is worked out here.
+ * Work out the content box (merged node positions, edge bend points and the
+ * residual and curve geometry drawn, plus padding and the caption under it)
+ * and show the view: `view` (`render/zoom.ts`) fits it on load, restore and
+ * Re-run layout (a new layout object) and after the Fit button, and keeps
+ * the user's zoom and pan after every other change, so an edit never moves
+ * the view. `overlay` is the geometry `redraw` just drew; without it the last
+ * drawn geometry is used.
  */
-function fitViewBox(overlay?: OverlayGeometry): void {
-  if (isGestureActive()) return;
+function updateView(overlay?: OverlayGeometry): void {
   const s = useStore.getState();
   const merged = s.layout ? mergeLayout(s.layout, s) : null;
   const boxes = merged?.nodes ?? [];
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
+  if (overlay) lastOverlay = overlay;
   if (merged && s.graph) {
     const shapeOf = nodeShapeLookup(s.graph, s.nodeStyles);
     const labelHalf = curveLabelHalfWidth({ ...s.global, fontSize: DEFAULT_EDGE_STYLE.labelFontSize });
-    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf), labelHalf));
+    lastOverlay ??= overlayGeometry(merged, s.graph.edges, shapeOf);
+    points.push(...overlayPoints(lastOverlay, labelHalf));
   }
   const content = contentViewBox(boxes, { points });
   const captions = s.graph ? modelCaptions(s.graph.source) : [];
   const placed = placeCaption(content, captions.length);
   const textWidth = renderCaption(captionG, captions, placed);
-  svg.setAttribute('viewBox', formatViewBox(widenToFit(placed.viewBox, placed.at.x, textWidth)));
+  const whole = widenToFit(placed.viewBox, placed.at.x, textWidth);
+  svg.setAttribute('viewBox', formatViewBox(view.update(s.layout, whole, canvasSize)));
+}
+
+/**
+ * The canvas for an export: a copy whose viewBox is the whole diagram (the
+ * content box of the last redraw), not the zoomed or panned view.
+ */
+function canvasForExport(): SVGSVGElement {
+  const copy = svg.cloneNode(true) as SVGSVGElement;
+  const whole = view.contentBox;
+  if (whole) copy.setAttribute('viewBox', formatViewBox(whole));
+  return copy;
 }
 

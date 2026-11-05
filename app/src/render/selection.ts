@@ -9,6 +9,11 @@ import type { GroupSelection } from './svg.js';
 import { exceedsClickThreshold, nodePointerSelection, type SelectionChange } from './interaction.js';
 
 export interface SelectionWiring {
+  /**
+   * End a selection box in progress without changing the selection: a
+   * second finger turned the touch into a pinch or pan (`render/zoom.ts`).
+   */
+  cancelMarquee(): void;
   destroy(): void;
 }
 
@@ -21,7 +26,13 @@ export interface SelectionWiring {
  *   - click on an edge = single select edge
  *   - shift+click on an edge = additive
  *   - mousedown on empty canvas + drag = marquee rect select (nodes only)
- *   - click on empty canvas (no drag) = clear selection
+ *   - click on empty canvas (no drag) = clear selection, on release, so a
+ *     touch that becomes a two-finger pan leaves the selection alone
+ *   - the middle button is left to panning (`render/zoom.ts`)
+ *
+ * Pointers are mapped to diagram units through the canvas's screen CTM,
+ * which follows the zoomed and panned viewBox; the marquee start is kept in
+ * diagram units, so a zoom during the marquee keeps it on the same spot.
  */
 export function wireSelection(
   svg: SVGSVGElement,
@@ -35,6 +46,8 @@ export function wireSelection(
   let marqueeShift = false;
   /** True once the pointer crossed the click threshold (a drag, not a click). */
   let didMarquee = false;
+  /** The pointer drawing the marquee; other pointers do not move or end it. */
+  let marqueePointer = -1;
 
   /** A press on a node, kept until its release decides click vs drag. */
   let nodePress: {
@@ -62,6 +75,10 @@ export function wireSelection(
   };
 
   const onPointerDown = (event: PointerEvent) => {
+    if (event.button === 1) return;
+    // Another pointer while the box is drawn (a second finger) is a pinch.
+    // The same pointer pressing again lost its release, and starts afresh.
+    if (marqueeStart && event.pointerId !== marqueePointer) return;
     const target = event.target as Element;
     const nodeEl = target.closest('g.node') as SVGGElement | null;
     const edgeEl = target.closest('g.edge') as SVGGElement | null;
@@ -104,16 +121,13 @@ export function wireSelection(
     marqueeStart = pt;
     marqueeClientStart = { x: event.clientX, y: event.clientY };
     marqueeShift = event.shiftKey;
+    marqueePointer = event.pointerId;
     didMarquee = false;
-    if (!event.shiftKey) {
-      useStore.getState().clearAllSelection();
-      redraw();
-    }
     svg.setPointerCapture(event.pointerId);
   };
 
   const onPointerMove = (event: PointerEvent) => {
-    if (!marqueeStart) return;
+    if (!marqueeStart || event.pointerId !== marqueePointer) return;
     const pt = clientToSvg(svg, event.clientX, event.clientY);
     const x = Math.min(marqueeStart.x, pt.x);
     const y = Math.min(marqueeStart.y, pt.y);
@@ -163,12 +177,12 @@ export function wireSelection(
 
   // A cancelled pointer (for example a touch taken over by the browser)
   // ends the marquee without changing the selection.
-  const onPointerCancel = () => {
-    if (marqueeStart) endMarquee();
+  const onPointerCancel = (event: PointerEvent) => {
+    if (marqueeStart && event.pointerId === marqueePointer) endMarquee();
   };
 
   const onPointerUp = (event: PointerEvent) => {
-    if (!marqueeStart) return;
+    if (!marqueeStart || event.pointerId !== marqueePointer) return;
     const end = clientToSvg(svg, event.clientX, event.clientY);
     const x1 = Math.min(marqueeStart.x, end.x);
     const y1 = Math.min(marqueeStart.y, end.y);
@@ -178,7 +192,14 @@ export function wireSelection(
       didMarquee || exceedsClickThreshold(marqueeClientStart, { x: event.clientX, y: event.clientY });
     endMarquee();
 
-    if (!moved) return;
+    if (!moved) {
+      // A click on empty canvas clears the selection; Shift keeps it.
+      if (!marqueeShift) {
+        useStore.getState().clearAllSelection();
+        redraw();
+      }
+      return;
+    }
 
     const positions = useStore.getState().positions;
     const hits = new Set<string>();
@@ -198,17 +219,20 @@ export function wireSelection(
   svg.addEventListener('pointerdown', onPointerDown as EventListener);
   svg.addEventListener('pointermove', onPointerMove as EventListener);
   svg.addEventListener('pointerup', onPointerUp as EventListener);
-  svg.addEventListener('pointercancel', onPointerCancel);
+  svg.addEventListener('pointercancel', onPointerCancel as EventListener);
   window.addEventListener('pointermove', onWindowPointerMove);
   window.addEventListener('pointerup', onWindowPointerUp);
   window.addEventListener('pointercancel', onWindowPointerCancel);
 
   return {
+    cancelMarquee() {
+      if (marqueeStart) endMarquee();
+    },
     destroy() {
       svg.removeEventListener('pointerdown', onPointerDown as EventListener);
       svg.removeEventListener('pointermove', onPointerMove as EventListener);
       svg.removeEventListener('pointerup', onPointerUp as EventListener);
-      svg.removeEventListener('pointercancel', onPointerCancel);
+      svg.removeEventListener('pointercancel', onPointerCancel as EventListener);
       window.removeEventListener('pointermove', onWindowPointerMove);
       window.removeEventListener('pointerup', onWindowPointerUp);
       window.removeEventListener('pointercancel', onWindowPointerCancel);

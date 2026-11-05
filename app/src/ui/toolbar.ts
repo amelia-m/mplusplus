@@ -3,7 +3,7 @@
  * when the `recent` hooks are given), align and distribute the selected nodes, rotate or flip
  * the selection or the whole diagram and grow a selection of factors to
  * their measurement blocks (`render/arrange.ts`), undo and redo (through
- * `state/history.ts`), re-run the layout, export (`render/export.ts`, when
+ * `state/history.ts`), re-run the layout, fit the view, export (`render/export.ts`, when
  * the `onExport` hook is given) and switch the page theme.
  */
 import { alignSelected, distributeSelected, type AlignMode, type DistributeMode } from '../render/align.js';
@@ -23,6 +23,8 @@ const SELECT_BLOCK_MESSAGES = {
 export interface ToolbarHooks {
   onRedraw(): void;
   onRelayout(): void;
+  /** Fit the whole diagram in the canvas (the View group's Fit button). */
+  onFit(): void;
   /** Show a short message (a toast). */
   onMessage(text: string): void;
   /**
@@ -127,7 +129,16 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
       ),
     );
   }
-  host.append(group('View', themeButton(make)));
+  host.append(
+    group(
+      'View',
+      titled(
+        make('Fit', 'btn', () => hooks.onFit()),
+        'Show the whole diagram. Scroll to pan, Ctrl+scroll or pinch to zoom, middle-drag or two fingers to pan.',
+      ),
+      themeButton(make),
+    ),
+  );
 }
 
 /** Reads and remembers the choice; storage can be missing or refuse (private windows). */
