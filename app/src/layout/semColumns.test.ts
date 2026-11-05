@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
 import { buildGraph, type ModelGraph } from '../model/graph.js';
-import { indicatorSide, semColumns } from './semColumns.js';
+import { indicatorSide, MIDDLE_COLUMN_RESIDUAL_SIDE, outerSide, semColumns } from './semColumns.js';
 
 const DGM_DIR = resolve(__dirname, '../../../dgm');
 const load = (name: string): ModelGraph => buildGraph(parseDgm(readFileSync(join(DGM_DIR, name), 'utf8')));
@@ -25,6 +25,22 @@ describe('indicatorSide - where a latent\'s indicators go (D7)', () => {
     expect(indicatorSide(1, 3, 0, 1)).toBe('bottom');
     expect(indicatorSide(1, 4, 0, 2)).toBe('top');
     expect(indicatorSide(1, 4, 1, 2)).toBe('bottom');
+  });
+});
+
+describe('outerSide - the outer edge a residual points to (D18)', () => {
+  it('points left in the left half and right in the right half', () => {
+    expect(outerSide(0, 5)).toBe('left');
+    expect(outerSide(1, 5)).toBe('left');
+    expect(outerSide(3, 5)).toBe('right');
+    expect(outerSide(4, 5)).toBe('right');
+  });
+  it('uses the middle-column side in the middle of an odd count, a lone column included', () => {
+    expect(outerSide(2, 5)).toBe(MIDDLE_COLUMN_RESIDUAL_SIDE);
+    expect(outerSide(0, 1)).toBe(MIDDLE_COLUMN_RESIDUAL_SIDE);
+  });
+  it('has no middle column in an even count', () => {
+    expect([0, 1, 2, 3].map((c) => outerSide(c, 4))).toEqual(['left', 'left', 'right', 'right']);
   });
 });
 

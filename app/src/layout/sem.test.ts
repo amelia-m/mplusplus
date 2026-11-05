@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { parseDgm } from '../parser/dgm.js';
 import { buildGraph, type ModelGraph } from '../model/graph.js';
 import { placeSem, segmentCrossesBox } from './sem.js';
+import { MIDDLE_COLUMN_RESIDUAL_SIDE } from './semColumns.js';
 import type { LayoutResult, NodeLayout } from './index.js';
 
 const DGM_DIR = resolve(__dirname, '../../../dgm');
@@ -76,6 +77,56 @@ describe('placeSem - indicator sides as Mplus draws them', () => {
   it('right of the factors in a one-column CFA (pcwas_cfa)', () =>
     expect(sideOf(load('pcwas_cfa.dgm'), 'pwas', 'pwas1')).toBe('right'));
   it('left in the first column (ms_fig2 eth_1)', () => expect(sideOf(load('ms_fig2.dgm'), 'eth_1', 'et_anc1')).toBe('left'));
+});
+
+describe('placeSem - residuals point to the outer edge (D18)', () => {
+  const sides = (name: string): Map<string, string> =>
+    new Map((placeSem(load(name), W, H).residuals ?? []).map((r) => [r.id, r.side]));
+
+  it('points a right-half dependent variable right and a middle-column one to the middle side (syn_path)', () => {
+    const s = sides('syn_path.dgm');
+    expect(s.get('d1')).toBe('right');
+    expect(s.get('d2')).toBe('right');
+    expect(s.get('m1')).toBe(MIDDLE_COLUMN_RESIDUAL_SIDE);
+  });
+
+  it('points a left-half dependent variable left, which used to point right (lcsmcn rcp011)', () => {
+    expect(sides('lcsmcn.dgm').get('rcp011')).toBe('left');
+  });
+
+  it('points right-half dependents right and keeps indicators pointing away from their factor (syn_sem)', () => {
+    const s = sides('syn_sem.dgm');
+    expect(s.get('x1')).toBe('right');
+    expect(s.get('x2')).toBe('right');
+    expect(s.get('a1')).toBe('bottom');
+  });
+
+  it('points the residuals of indicators above a factor at the top up, and below one at the bottom down (syn_range)', () => {
+    const g = load('syn_range.dgm');
+    const layout = placeSem(g, W, H);
+    const at = new Map(layout.nodes.map((n) => [n.id, centre(n)]));
+    const s = new Map((layout.residuals ?? []).map((r) => [r.id, r.side]));
+    // fg sits above fh in the middle column, its fan above it, fh's below.
+    expect(at.get('fg')!.y).toBeLessThan(at.get('fh')!.y);
+    expect(at.get('g1')!.y).toBeLessThan(at.get('fg')!.y);
+    expect(at.get('h1')!.y).toBeGreaterThan(at.get('fh')!.y);
+    for (const id of ['g1', 'g2', 'g3', 'g4']) expect(s.get(id), id).toBe('top');
+    for (const id of ['h1', 'h2', 'h3', 'h4']) expect(s.get(id), id).toBe('bottom');
+  });
+
+  it('puts every dependent variable of a one-column diagram on the middle side (dc_tol_cfaallcorrelations lft)', () => {
+    expect(sides('dc_tol_cfaallcorrelations.dgm').get('lft')).toBe(MIDDLE_COLUMN_RESIDUAL_SIDE);
+  });
+
+  it('bends a covariance between two residuals to the side they now share (idnfc41b, syn_sem)', () => {
+    const curveOf = (name: string, a: string, b: string) => {
+      const g = load(name);
+      const e = g.edges.find((x) => (x.kind === 'WITH' || x.kind === 'COVAR') && [x.from, x.to].sort().join() === [a, b].sort().join())!;
+      return placeSem(g, W, H).edges.find((x) => x.id === e.id)!.curve;
+    };
+    expect(curveOf('idnfc41b.dgm', 'idscal', 'pidscal')).toEqual({ side: MIDDLE_COLUMN_RESIDUAL_SIDE, attach: 'residual' });
+    expect(curveOf('syn_sem.dgm', 'x1', 'x2')).toEqual({ side: 'right', attach: 'residual' });
+  });
 });
 
 describe('placeSem - paths and curves', () => {

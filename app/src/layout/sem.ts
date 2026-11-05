@@ -2,7 +2,7 @@
  * The `sem` layout engine: columns and stacking from `semColumns`, each
  * latent's indicators fanned out on the side `indicatorSide` gives, paths
  * left straight, residuals and covariance curves placed on free sides
- * (docs/diagram-conventions.md D2, D4-D8). Sides are stored, not
+ * (docs/diagram-conventions.md D2, D4-D8, D12, D18). Sides are stored, not
  * coordinates, so the renderer can follow dragged nodes.
  */
 import { isSymmetricKind, type ModelGraph } from '../model/graph.js';
@@ -15,7 +15,7 @@ import type {
   ResidualLayout,
   Side,
 } from './index.js';
-import { indicatorSide, semColumns } from './semColumns.js';
+import { indicatorSide, outerSide, semColumns } from './semColumns.js';
 
 /** Between neighbouring indicators of one fan. */
 const INDICATOR_GAP = 24;
@@ -128,7 +128,7 @@ export function placeSem(graph: ModelGraph, w: number, h: number): LayoutResult 
     .filter((n) => !placed.has(n.id))
     .forEach((n, k) => nodes.push(box(n.id, x, k * (h + BLOCK_GAP))));
 
-  const residuals = residualSides(graph, indicators, fanSide);
+  const residuals = residualSides(graph, columns, indicators, fanSide);
   const edges = edgeLayouts(graph, nodes, residuals, fanSide);
   const right = Math.max(0, ...nodes.map((n) => n.x + n.width));
   const bottom = Math.max(0, ...nodes.map((n) => n.y + n.height));
@@ -196,17 +196,23 @@ export function segmentCrossesBox(
 }
 
 /**
- * Residual sides: an indicator's points away from its factor; otherwise
- * observed variables take the right and latents the top, as in Mplus, or
- * the bottom when the latent's own indicators are above it.
+ * Residual sides (D18): an indicator's points away from its factor, which
+ * is the outer edge too, since fans sit on a free outer side (D7): up for
+ * a fan above its factor, down for one below. An observed variable in a
+ * column points to the diagram's outer edge (`outerSide`); one outside any
+ * column is drawn right of everything, so it points right. Latents keep
+ * Mplus's top, or the bottom when their own indicators are above (D12).
  */
 function residualSides(
   graph: ModelGraph,
+  columns: string[][],
   indicators: Map<string, string[]>,
   fanSide: Map<string, Side>,
 ): ResidualLayout[] {
   const factorOf = new Map<string, string>();
   for (const [latent, fan] of indicators) for (const f of fan) factorOf.set(f, latent);
+  const columnOf = new Map<string, number>();
+  columns.forEach((ids, c) => ids.forEach((id) => columnOf.set(id, c)));
   return graph.nodes
     .filter((n) => n.residual !== null)
     .map((n): ResidualLayout => {
@@ -215,7 +221,10 @@ function residualSides(
       // indicators then follow the rule for other variables.
       const away = factor !== undefined ? fanSide.get(factor) : undefined;
       if (away !== undefined) return { id: n.id, side: away };
-      if (n.kind === 'observed') return { id: n.id, side: 'right' };
+      if (n.kind === 'observed') {
+        const c = columnOf.get(n.id);
+        return { id: n.id, side: c === undefined ? 'right' : outerSide(c, columns.length) };
+      }
       return { id: n.id, side: fanSide.get(n.id) === 'top' ? 'bottom' : 'top' };
     });
 }
