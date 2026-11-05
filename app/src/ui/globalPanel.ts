@@ -1,10 +1,12 @@
 /**
- * Global controls strip: coefficient mode, display and decimals, magnitude
+ * Global controls strip: coefficient mode, display (coefficients, SE, 95%
+ * limits, covariance values) and decimals, magnitude
  * scaling, significance alpha and p-value source, and a reset of all style
  * overrides. Edits `GlobalStyle` in the store.
  */
 import { useStore } from '../state/store.js';
 import type { GlobalStyle } from '../render/styles.js';
+import { hasConfidenceLimits, type ModelGraph } from '../model/graph.js';
 import { parseNumberInput, type NumberSpec } from './numberInput.js';
 import { formatNumber, wireLiveSlider } from './liveSlider.js';
 
@@ -49,6 +51,22 @@ export function mountGlobalPanel(host: HTMLElement, hooks: GlobalPanelHooks): vo
     return control.el;
   };
 
+  // Confidence limits: greyed out, with a note, while the open file has none.
+  const limitsControl = checkboxControl('95% limits', 'showCI', set);
+  const limitsBox = limitsControl.el.querySelector('input')!;
+  const limitsNote = document.createElement('span');
+  limitsNote.className = 'global-note';
+  limitsNote.textContent = '(not in this file)';
+  limitsControl.el.append(limitsNote);
+  const syncLimitsAvailable = (graph: ModelGraph | null): void => {
+    const available = hasConfidenceLimits(graph);
+    limitsBox.disabled = !available;
+    // Inline, so no page color token is needed: the browser greys the box.
+    limitsControl.el.style.opacity = available ? '' : '0.55';
+    limitsNote.hidden = available;
+    limitsControl.el.title = available ? '' : NO_LIMITS_NOTE;
+  };
+
   host.append(
     group('Coefficients', [
       add(
@@ -63,6 +81,9 @@ export function mountGlobalPanel(host: HTMLElement, hooks: GlobalPanelHooks): vo
         ),
       ),
       add(checkboxControl('Show', 'showCoefficients', set)),
+      add(checkboxControl('SE', 'showSE', set)),
+      add(limitsControl),
+      add(checkboxControl('Covariances', 'showCovarianceLabels', set)),
       add(numberControl('Decimals', 'decimals', { min: 0, max: 6, integer: true }, 1, set)),
     ]),
     group('Magnitude', [
@@ -109,9 +130,14 @@ export function mountGlobalPanel(host: HTMLElement, hooks: GlobalPanelHooks): vo
   };
   useStore.subscribe((s, prev) => {
     if (s.global !== prev.global) syncAll(s.global);
+    if (s.graph !== prev.graph) syncLimitsAvailable(s.graph);
   });
   syncAll(useStore.getState().global);
+  syncLimitsAvailable(useStore.getState().graph);
 }
+
+/** Shown on the limits option while the open file has no confidence limits. */
+export const NO_LIMITS_NOTE = 'This file has no confidence limits: run the model with OUTPUT: CINTERVAL.';
 
 // ----------------- DOM helpers -----------------
 

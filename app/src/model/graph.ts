@@ -11,10 +11,12 @@ import type { DgmFile, EstimateRow, ModelStmt, ModelTerm } from '../parser/dgm.j
  * `matchEdgeForRow`; single-variable variance rows are skipped). A row with
  * no matching edge synthesizes one: a covariance row (code 2, 12, 22, 32
  * or 92) becomes an undirected `COVAR` edge, and any other row becomes an
- * `ON` edge from the row's `from` to its `to`. Only codes 1
- * (unstandardized) and 11 (STDYX) attach an estimate and SE to the edge;
- * label rows (91, 92) attach a constraint label; every other code is
- * matched but not stored.
+ * `ON` edge from the row's `from` to its `to`. Codes 1 and 2
+ * (unstandardized loading or regression, and covariance) and 11 and 12
+ * (their STDYX forms) attach an estimate, SE and confidence limits to the
+ * edge, except a `999.000` estimate, which Mplus writes for a parameter it
+ * does not estimate; label rows (91, 92) attach a constraint label; every
+ * other code is matched but not stored.
  */
 
 export type NodeKind = 'latent' | 'observed';
@@ -22,7 +24,13 @@ export type EdgeKind = 'BY' | 'ON' | 'WITH' | 'COVAR';
 
 export interface EdgeEstimate {
   value: number;
+  /** Standard error; `NaN` when Mplus printed `999.000` for it (no SE). */
   se: number;
+  /**
+   * 95% confidence limits, from a file run with `OUTPUT: CINTERVAL`; absent
+   * or null otherwise. Set on edge estimates only, not residuals.
+   */
+  ci?: { lower: number; upper: number } | null;
 }
 
 export interface GraphNode {
@@ -51,9 +59,9 @@ export interface GraphEdge {
   fixed: number | null;
   /** Equality-constraint label from syntax `(label)` or estimate code 91. */
   constraint: string | null;
-  /** Code-1 (unstandardized) estimate from the DGM table. */
+  /** Unstandardized estimate from the DGM table: code 1, or code 2 for a covariance. */
   unstd: EdgeEstimate | null;
-  /** Code-11 (STDYX) estimate from the DGM table. */
+  /** STDYX estimate from the DGM table: code 11, or code 12 for a covariance (a correlation). */
   stdyx: EdgeEstimate | null;
 }
 
@@ -267,16 +275,37 @@ function attachEstimates(
       edge.constraint = row.constraintLabel;
       continue;
     }
-    if (row.value == null || row.se == null) continue;
+    const estimate = edgeEstimateOf(row);
+    if (estimate === null) continue;
 
-    if (row.code === 1) {
-      edge.unstd = { value: row.value, se: row.se };
-    } else if (row.code === 11) {
-      edge.stdyx = { value: row.value, se: row.se };
+    // The matcher keeps 1/11 on BY/ON edges and 2/12 on WITH/COVAR edges.
+    if (row.code === 1 || row.code === 2) {
+      edge.unstd = estimate;
+    } else if (row.code === 11 || row.code === 12) {
+      edge.stdyx = estimate;
     }
-    // Other codes (2/4/5 and 1x/3x variants) describe variances or per-group
-    // residuals; they are not directly attached to an edge in this round.
+    // STDY (2x) and STD (3x) rows are matched but not stored.
   }
+}
+
+/**
+ * The estimate a row carries, or null when it has none: a label row, or a
+ * `999.000` estimate (not estimated by Mplus). A `999.000` SE becomes NaN
+ * (no SE), and `999.000` limits are dropped.
+ */
+function edgeEstimateOf(row: EstimateRow): EdgeEstimate | null {
+  if (row.value == null || row.se == null || row.value === NOT_ESTIMATED) return null;
+  const se = row.se === NOT_ESTIMATED ? Number.NaN : row.se;
+  const ci =
+    row.ci && row.ci.lower !== NOT_ESTIMATED && row.ci.upper !== NOT_ESTIMATED
+      ? { lower: row.ci.lower, upper: row.ci.upper }
+      : null;
+  return { value: row.value, se, ci };
+}
+
+/** True when any edge has confidence limits in either coefficient mode. */
+export function hasConfidenceLimits(graph: Pick<ModelGraph, 'edges'> | null): boolean {
+  return graph?.edges.some((e) => Boolean(e.unstd?.ci || e.stdyx?.ci)) ?? false;
 }
 
 /** Unstandardized and STDYX codes of residual variances (4) and variances (5). */

@@ -8,7 +8,7 @@
  * in `deriveEdgeBase`; `effectiveEdgeStyle` merges the override on top.
  */
 
-import type { GraphEdge, GraphNode } from '../model/graph.js';
+import type { EdgeEstimate, GraphEdge, GraphNode } from '../model/graph.js';
 
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 export type ArrowheadStyle = 'default' | 'open' | 'none';
@@ -90,6 +90,12 @@ export interface GlobalStyle {
   decimals: number;
   coefMode: 'unstd' | 'stdyx';
   showCoefficients: boolean;
+  /** Show the standard error after the estimate: `0.81 (0.04)`. */
+  showSE: boolean;
+  /** Show the 95% confidence limits after the estimate: `0.81 [0.72, 0.89]`. */
+  showCI: boolean;
+  /** Show the values on covariance (WITH / COVAR) edges. */
+  showCovarianceLabels: boolean;
   magnitudeScaling: boolean;
   magnitudeScale: number;
   baseEdgeWidth: number;
@@ -106,6 +112,11 @@ export const DEFAULT_GLOBAL_STYLE: GlobalStyle = {
   decimals: 3,
   coefMode: 'unstd',
   showCoefficients: true,
+  // Amelia, 2026-10-26: SE shown by default, confidence limits off by default.
+  showSE: true,
+  showCI: false,
+  // Amelia, 2026-10-30: covariance values shown by default, with a toggle to hide them.
+  showCovarianceLabels: true,
   magnitudeScaling: false,
   magnitudeScale: 3,
   baseEdgeWidth: 1.5,
@@ -180,7 +191,7 @@ export function effectiveNodeStyle(
 export function activeEstimate(
   edge: GraphEdge,
   mode: 'unstd' | 'stdyx',
-): { value: number; se: number } | null {
+): EdgeEstimate | null {
   if (mode === 'stdyx') return edge.stdyx ?? edge.unstd;
   return edge.unstd ?? edge.stdyx;
 }
