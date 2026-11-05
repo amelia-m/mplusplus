@@ -423,3 +423,60 @@ g.edge { cursor: pointer; }
 g.edge.selected path.edge-path {
   filter: drop-shadow(0 0 2px var(--canvas-accent));
 }
+
+/* Export (render/export.ts, ui/exportDialog.ts): the dialog, and the print
+   sheet a PDF export shows alone on the page. */
+.export-dialog {
+  max-width: 520px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.export-dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
+
+.export-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.export-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  margin: 8px 0;
+}
+
+.export-fields dt { color: var(--muted); }
+.export-fields dd { margin: 0; overflow-wrap: anywhere; }
+
+.export-option {
+  display: block;
+  margin: 4px 0;
+}
+
+.export-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+#print-sheet { display: none; }
+
+@media print {
+  body.print-export {
+    background: #ffffff;
+    height: auto;
+  }
+  body.print-export > :not(#print-sheet) { display: none !important; }
+  body.print-export #print-sheet { display: block; }
+  body.print-export #print-sheet svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 100vh;
+  }
+}

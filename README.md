@@ -13,6 +13,7 @@ The application is built as a self-contained static Single Page Application (SPA
 - **Automated Layout**: Graph layout powered by ELKjs (`elk-layered`).
 - **Interactive SVG Canvas**: Rendered via D3 with interactive node drag, box selection, multi-selection moves, and alignment and distribution tools.
 - **Inspection & Styling**: An inspector to adjust the selected nodes' and edges' styles, stroke widths and colors, and a global panel for diagram-wide settings, including the significance level (alpha) and the p-value source.
+- **Export**: SVG and PNG downloads, and PDF through the browser's print dialog, each recording where the diagram came from (source file name and SHA-256 hash, app version, export date, coefficient mode, weight, whether a `.out` was attached) as a small block under the diagram, which can be hidden, and as metadata in SVG and PNG files.
 - **Undo / Redo**: History management using Zustand and Zundo temporal middleware. A node drag or a slider scrub is one undo step. Use the toolbar buttons, Ctrl/Cmd+Z to undo, or Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z to redo.
 
 ## Repository Structure
