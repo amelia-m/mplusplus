@@ -76,6 +76,9 @@ export function wireSelection(
 
   const onPointerDown = (event: PointerEvent) => {
     if (event.button === 1) return;
+    // A second finger is the start of a pinch, never a selection press, even
+    // when it lands on a node.
+    if (event.pointerType === 'touch' && !event.isPrimary) return;
     // Another pointer while the box is drawn (a second finger) is a pinch.
     // The same pointer pressing again lost its release, and starts afresh.
     if (marqueeStart && event.pointerId !== marqueePointer) return;

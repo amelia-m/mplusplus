@@ -69,6 +69,18 @@ describe('buildProvenance', () => {
       expect(provenanceLines(record).some((l) => l.startsWith('Display names'))).toBe(false);
     }
   });
+
+  it('wraps many display names over several visible lines, which made one line that shrank the export', () => {
+    const displayNames = Array.from({ length: 10 }, (_, i) => ({ displayName: `Name${i}`, mplusName: `V${i}` }));
+    const record = buildProvenance({ ...INPUT, displayNames }, { includeFileName: true });
+    const lines = provenanceLines(record);
+    const start = lines.findIndex((l) => l.startsWith('Display names: Name0 (V0)'));
+    expect(lines.slice(start, start + 3)).toEqual([
+      'Display names: Name0 (V0); Name1 (V1); Name2 (V2); Name3 (V3)',
+      '  Name4 (V4); Name5 (V5); Name6 (V6); Name7 (V7)',
+      '  Name8 (V8); Name9 (V9)',
+    ]);
+  });
 });
 
 describe('composeSvg', () => {

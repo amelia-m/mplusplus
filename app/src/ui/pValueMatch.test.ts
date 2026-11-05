@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { countMatchedPValues, countPValueEdges, mplusTitle, outAttachNote, titlesDiffer } from './pValueMatch.js';
+import { countMatchedPValues, countNamedEdges, countPValueEdges, mplusTitle, outAttachNote, titlesDiffer } from './pValueMatch.js';
 import { parseDgm } from '../parser/dgm.js';
 import { buildGraph } from '../model/graph.js';
 import { buildPValueMap, parseOut } from '../parser/out.js';
@@ -52,6 +52,14 @@ describe('countPValueEdges', () => {
     const m = countPValueEdges(g);
     expect(m).toBeGreaterThan(0);
     expect(countMatchedPValues(pValues, g)).toBe(m);
+  });
+
+  it('counts the fixed loadings of a .out without STDYX as named, though they carry no p-value', () => {
+    const g = buildGraph(parseDgm(read(resolve(DGM_DIR, 'syn_sem.dgm'))));
+    const noStd = read(resolve(FIXTURES, 'sample.out')).replace(/\r\n?/g, '\n').split('\nSTANDARDIZED MODEL RESULTS')[0];
+    const pValues = buildPValueMap(parseOut(noStd));
+    expect(countMatchedPValues(pValues, g)).toBe(countPValueEdges(g) - 2); // fb -> b1, fc -> c1
+    expect(countNamedEdges(pValues, g)).toBe(countPValueEdges(g));
   });
 });
 
@@ -123,6 +131,19 @@ describe('outAttachNote', () => {
       text: 'Attached p-values from run.out to run.dgm, but only 6 of 19 edges matched; this .out may be from another model. Undo removes them.',
       warning: true,
     });
+  });
+
+  it('does not warn for fixed parameters the .out names with no p-value (bug: a .out without STDYX read as another model)', () => {
+    expect(outAttachNote({ ...base, matched: 17, named: 19, attachable: 19 })).toEqual({
+      text: 'Attached p-values from run.out to run.dgm (17 of 19 edges). Undo removes them.',
+      warning: false,
+    });
+  });
+
+  it('leaves out the Undo sentence for a demo, whose history is reset after loading', () => {
+    expect(outAttachNote({ ...base, matched: 19, attachable: 19, undoable: false }).text).toBe(
+      'Attached p-values from run.out to run.dgm (19 of 19 edges).',
+    );
   });
 
   it('warns when the TITLEs differ, even with every edge matched', () => {

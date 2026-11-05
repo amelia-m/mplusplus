@@ -21,6 +21,19 @@ export function countMatchedPValues(
   return n;
 }
 
+/**
+ * Number of edges in the current graph that the `.out` names at all, with or
+ * without a usable p-value. A loading fixed at 1 in a `.out` without
+ * standardized results has only Mplus's `999.000` (null), so it attaches
+ * nothing, but the `.out` does describe it: it is the same model.
+ */
+export function countNamedEdges(
+  pValues: Readonly<Record<string, PValueEntry | undefined>>,
+  graph: { edges: ReadonlyArray<{ id: string }> },
+): number {
+  return graph.edges.filter((e) => Object.prototype.hasOwnProperty.call(pValues, e.id)).length;
+}
+
 /** Directed (BY, ON) and covariance (WITH, COVAR) edges: the kinds a `.out` p-value can name. */
 const P_VALUE_KINDS: ReadonlySet<EdgeKind> = new Set<EdgeKind>(['BY', 'ON', 'WITH', 'COVAR']);
 
@@ -132,26 +145,34 @@ export function outAttachNote(args: {
   outTitle: string | null;
   diagramTitle: string | null;
   changed?: boolean;
+  /**
+   * Edges the `.out` names at all (`countNamedEdges`), p-value or not; the
+   * mismatch warning compares this, not `matched`, so fixed parameters with
+   * no p-value do not read as edges from another model. Defaults to `matched`.
+   */
+  named?: number;
+  /** False when Undo will not remove them (a demo, whose history is reset after loading). */
+  undoable?: boolean;
 }): AttachNote {
   const { outName, diagramName, matched } = args;
   // Never print "20 of 19", should a graph ever hold an edge kind not counted as attachable.
   const attachable = Math.max(args.attachable, matched);
-  const some = matched < attachable;
+  const some = Math.max(args.named ?? matched, matched) < attachable;
   const otherTitle = titlesDiffer(args.outTitle, args.diagramTitle);
   const changed = args.changed ?? true;
   const head = changed
     ? `Attached p-values from ${outName} to ${diagramName}`
     : `The p-values from ${outName} were already attached to ${diagramName}`;
   const counts = `(${matched} of ${attachable} edges)`;
-  const undo = changed ? 'Undo removes them.' : 'Nothing changed.';
+  const undo = !changed ? 'Nothing changed.' : (args.undoable ?? true) ? 'Undo removes them.' : '';
   const another = 'this .out may be from another model.';
   const titleNote = `its TITLE differs from ${diagramName}'s`;
-  if (!some && !otherTitle) return { text: `${head} ${counts}. ${undo}`, warning: false };
+  if (!some && !otherTitle) return { text: `${head} ${counts}. ${undo}`.trim(), warning: false };
   const onlySome = `only ${matched} of ${attachable} edges matched`;
   const text = !otherTitle
     ? `${head}, but ${onlySome}; ${another} ${undo}`
     : some
       ? `${head}, but ${onlySome} and ${titleNote}; ${another} ${undo}`
       : `${head} ${counts}, but ${titleNote}; ${another} ${undo}`;
-  return { text, warning: true };
+  return { text: text.trim(), warning: true };
 }

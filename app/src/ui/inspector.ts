@@ -56,6 +56,14 @@ export function mountInspector(host: HTMLElement, redraw: Redraw): void {
 
   const rebuild = (): void => {
     rebuildPending = false;
+    // Commit a field still being typed in (a display name) before its panel
+    // goes: clicking another node changes the selection on the press, before
+    // the field's own `change` fires. Its handler writes to the node it was
+    // built for, and a commit that changes nothing stores nothing.
+    const typing = document.activeElement;
+    if (typing instanceof HTMLInputElement && typing.type === 'text' && host.contains(typing)) {
+      typing.dispatchEvent(new Event('change'));
+    }
     sync = buildInspector(host, redraw);
     sync(useStore.getState());
   };

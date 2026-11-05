@@ -29,7 +29,7 @@ import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
 import { mountInspector } from './ui/inspector.js';
 import { classifyHistoryKey } from './ui/historyKeys.js';
-import { countMatchedPValues, countPValueEdges, mplusTitle, outAttachNote } from './ui/pValueMatch.js';
+import { countMatchedPValues, countNamedEdges, countPValueEdges, mplusTitle, outAttachNote } from './ui/pValueMatch.js';
 import { interceptsWindowDrag, isFileDrag } from './ui/fileDrag.js';
 import { describeTarget } from './ui/textEntry.js';
 import { DEMOS, type Demo } from './ui/demos.js';
@@ -49,7 +49,7 @@ import {
 } from './state/autosave.js';
 import { AutosaveController } from './state/autosaveController.js';
 import type { TabChannel } from './state/autosaveTabs.js';
-import { endActiveGesture } from './state/gesture.js';
+import { endActiveGesture, isGestureActive, onGestureEnd } from './state/gesture.js';
 import { redoHistory, undoHistory } from './state/history.js';
 import type { ModelGraph } from './model/graph.js';
 import type { LayoutResult } from './layout/index.js';
@@ -110,8 +110,6 @@ let current: { fileName: string; dgmText: string; sourceKind: SourceKind } | nul
 let discarding = false;
 /** Set when storage refused a save, so the warning is shown once per diagram. */
 let saveRefused = false;
-/** Set once the user's own `.dgm` is installed, which then wins over a restore still in progress. */
-let fileLoaded = false;
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app element missing from index.html');
@@ -244,10 +242,24 @@ wireZoom(svg, view, {
   },
 });
 // A resized canvas keeps its zoom and center (`resizeView`).
+// A resize during a drag or a slider scrub waits for it to end: a refit then
+// would move the diagram under the pointer. Redraws in the meantime keep the
+// old size, so the view stays put.
+let resizePending = false;
 new ResizeObserver(() => {
+  if (isGestureActive()) {
+    resizePending = true;
+    return;
+  }
   canvasSize = elementSize(svg);
   updateView();
 }).observe(svg);
+onGestureEnd(() => {
+  if (!resizePending) return;
+  resizePending = false;
+  canvasSize = elementSize(svg);
+  updateView();
+});
 
 dropzone.addEventListener('click', (e) => {
   // A click in the demo list opens a demo or a download, not the file picker.
@@ -294,7 +306,7 @@ async function openDemo(demo: Demo): Promise<void> {
     // Open recent entry) can land between its `.dgm` and its `.out`.
     await enqueueLoad(async () => {
       for (const f of demo.files) {
-        if (!(await loadFile(new File([f.text], f.name, { type: 'text/plain' })))) return;
+        if (!(await loadFile(new File([f.text], f.name, { type: 'text/plain' }), { undoable: false }))) return;
       }
       clearHistory();
     });
@@ -338,6 +350,9 @@ picker.addEventListener('change', () => {
 });
 
 window.addEventListener('keydown', (e) => {
+  // The export dialog holds a copy of the canvas taken when it opened; an
+  // undo behind it would export a state no longer on screen.
+  if (document.querySelector('dialog[open]')) return;
   const action = classifyHistoryKey(e, describeTarget(e.target));
   if (action === 'none') return;
   e.preventDefault();
@@ -426,7 +441,9 @@ let installs = 0;
  */
 async function startAutosave(controller: AutosaveController): Promise<void> {
   const { restore: own, offer } = await controller.start();
-  if (fileLoaded) {
+  // A file loaded, or a kept diagram opened (Open recent works as soon as
+  // the tab has its id), while the controller started wins over the restore.
+  if (installs > 0) {
     saveNow();
   } else if (own) {
     await restore(own, 'own');
@@ -534,7 +551,8 @@ function enqueueLoad<T>(job: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function loadFile(file: File): Promise<boolean> {
+/** `undoable: false` for a demo, whose history is reset once it has loaded. */
+async function loadFile(file: File, opts: { undoable?: boolean } = {}): Promise<boolean> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
@@ -573,6 +591,8 @@ async function loadFile(file: File): Promise<boolean> {
         outName: file.name,
         diagramName: current?.fileName ?? 'this diagram',
         matched: n,
+        named: graph ? countNamedEdges(pValues, graph) : n,
+        undoable: opts.undoable,
         attachable: graph ? countPValueEdges(graph) : n,
         outTitle: mplusTitle(text, 'out'),
         diagramTitle: current ? mplusTitle(current.dgmText, current.sourceKind) : null,
@@ -606,7 +626,6 @@ async function openDiagram(
   // Set in the same step as the install, so a restore still in
   // progress sees it and gives way; a load that failed never sets it.
   installGraph(graph, layout, slice);
-  fileLoaded = true;
   installs++;
   current = { fileName, dgmText: text, sourceKind };
   saveRefused = false;

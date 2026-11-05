@@ -131,9 +131,26 @@ export function provenanceEntries(record: ProvenanceRecord): ProvenanceEntry[] {
   return entries;
 }
 
-/** The visible block's lines. */
+/** Display-name pairs per visible line, so many renamed variables do not make one line that widens the export. */
+const DISPLAY_NAMES_PER_LINE = 4;
+
+/**
+ * The visible block's lines. Display names wrap over several lines, a few
+ * pairs each; the metadata keeps them in one entry.
+ */
 export function provenanceLines(record: ProvenanceRecord): string[] {
-  return provenanceEntries(record).map((e) => `${e.label}: ${e.value}`);
+  const lines: string[] = [];
+  for (const e of provenanceEntries(record)) {
+    if (e.key !== 'display-names' || !record.displayNames) {
+      lines.push(`${e.label}: ${e.value}`);
+      continue;
+    }
+    for (let i = 0; i < record.displayNames.length; i += DISPLAY_NAMES_PER_LINE) {
+      const chunk = formatDisplayNames(record.displayNames.slice(i, i + DISPLAY_NAMES_PER_LINE));
+      lines.push(i === 0 ? `${e.label}: ${chunk}` : `  ${chunk}`);
+    }
+  }
+  return lines;
 }
 
 export function escapeXml(text: string): string {
