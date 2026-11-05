@@ -82,9 +82,15 @@ const REFUSAL_CHECKS: { reason: OutRefusal; test: (text: string) => boolean }[] 
   { reason: 'no-results', test: (t) => !/^\s*MODEL RESULTS\s*$/m.test(t) },
 ];
 
-/** Why `text` cannot be opened on its own, or null when it can. */
+/**
+ * Why `text` cannot be opened on its own, or null when it can. Only the report
+ * after the input echo is checked, so a TITLE or comment line in the echo
+ * (`Count of ...`, `Thresholds`) is not taken for one of Mplus's own lines.
+ */
 export function unsupportedOutReason(text: string): OutRefusal | null {
-  return REFUSAL_CHECKS.find((c) => c.test(text))?.reason ?? null;
+  const end = /^INPUT READING TERMINATED NORMALLY\s*$/m.exec(text);
+  const report = end ? text.slice(end.index) : text;
+  return REFUSAL_CHECKS.find((c) => c.test(report))?.reason ?? null;
 }
 
 /** A `.out` read as a model, or why it was refused. */

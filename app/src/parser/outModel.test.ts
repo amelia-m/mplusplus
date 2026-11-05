@@ -192,6 +192,12 @@ describe('unsupportedOutReason: refusals', () => {
     expect(unsupportedOutReason(withLine(line))).toBe(reason);
   });
 
+  it('does not refuse a continuous model whose echoed TITLE has a line starting with Count, which read as count outcomes', () => {
+    const titled = sample.replace(/(INPUT INSTRUCTIONS\n\n)/, '$1  TITLE: a model\n  Count of items per factor: 4\n  Thresholds\n');
+    expect(titled).toContain('Count of items per factor');
+    expect(unsupportedOutReason(titled)).toBeNull();
+  });
+
   it('refuses an estimation that did not terminate normally', () => {
     expect(unsupportedOutReason(sample.replace('THE MODEL ESTIMATION TERMINATED NORMALLY', ''))).toBe('abnormal');
   });

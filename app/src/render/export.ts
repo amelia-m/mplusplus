@@ -395,21 +395,39 @@ function rasterize(svgText: string, size: { width: number; height: number }): Pr
 export const PRINT_CLASS = 'print-export';
 const PRINT_SHEET_ID = 'print-sheet';
 
-function printSheet(svgText: string): void {
-  document.getElementById(PRINT_SHEET_ID)?.remove();
-  const sheet = document.createElement('div');
-  sheet.id = PRINT_SHEET_ID;
-  // The document's own markup minus the XML declaration, which HTML rejects.
-  sheet.innerHTML = svgText.replace(/^<\?xml[^>]*>\s*/, '');
-  document.body.append(sheet);
-  document.body.classList.add(PRINT_CLASS);
-  const done = () => {
-    document.body.classList.remove(PRINT_CLASS);
-    sheet.remove();
-    window.removeEventListener('afterprint', done);
-  };
-  window.addEventListener('afterprint', done);
-  window.print();
+/**
+ * Print the composed SVG alone. It goes on the page as an image, a document
+ * of its own, so its marker ids cannot resolve to the live canvas's markers
+ * (which print hides) and the arrowheads stay. Prints once the image loads.
+ */
+function printSheet(svgText: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    document.getElementById(PRINT_SHEET_ID)?.remove();
+    const sheet = document.createElement('div');
+    sheet.id = PRINT_SHEET_ID;
+    const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+    const img = new Image();
+    img.alt = 'Diagram';
+    const done = () => {
+      document.body.classList.remove(PRINT_CLASS);
+      sheet.remove();
+      URL.revokeObjectURL(url);
+      window.removeEventListener('afterprint', done);
+    };
+    img.onload = () => {
+      window.addEventListener('afterprint', done);
+      window.print();
+      resolve();
+    };
+    img.onerror = () => {
+      done();
+      reject(new Error('The diagram could not be drawn for printing'));
+    };
+    sheet.append(img);
+    document.body.append(sheet);
+    document.body.classList.add(PRINT_CLASS);
+    img.src = url;
+  });
 }
 
 /**
@@ -433,6 +451,6 @@ export async function exportDiagram(kind: ExportKind, source: ExportSource, choi
     download(new Blob([tagged.buffer as ArrayBuffer], { type: 'image/png' }), exportFileName(source.fileName, 'png', choices.includeFileName));
   } else {
     const { text } = composeSvg({ body, viewBox, record, showVisible: choices.showVisible });
-    printSheet(text);
+    await printSheet(text);
   }
 }

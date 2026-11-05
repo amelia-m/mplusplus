@@ -473,7 +473,7 @@ g.edge.selected path.edge-path {
   }
   body.print-export > :not(#print-sheet) { display: none !important; }
   body.print-export #print-sheet { display: block; }
-  body.print-export #print-sheet svg {
+  body.print-export #print-sheet img {
     display: block;
     width: 100%;
     height: auto;

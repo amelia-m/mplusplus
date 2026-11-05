@@ -231,15 +231,43 @@ const LABEL_ROOM = 50;
 
 /**
  * Points the view must contain for the overlay: each residual's tail and
- * value, and each curve's control point (a quadratic curve lies within the
- * triangle of its ends and control point).
+ * value, each curve's control point (a quadratic curve lies within the
+ * triangle of its ends and control point), and room either side of each
+ * curve's midpoint for its value label, `labelHalfWidth` wide (0 when the
+ * covariance labels are hidden), so a label on a curve at the diagram's edge
+ * is not cut off.
  */
-export function overlayPoints(o: OverlayGeometry): Point[] {
+export function overlayPoints(o: OverlayGeometry, labelHalfWidth = 0): Point[] {
   const points: Point[] = [];
   for (const r of o.residuals.values()) {
     const dx = r.textAnchor === 'start' ? LABEL_ROOM : r.textAnchor === 'end' ? -LABEL_ROOM : 0;
     points.push(r.tail, r.labelAnchor, { x: r.labelAnchor.x + dx, y: r.labelAnchor.y });
   }
-  for (const c of o.curves.values()) points.push(c.control);
+  for (const c of o.curves.values()) {
+    points.push(c.control);
+    if (labelHalfWidth > 0) points.push({ x: c.mid.x - labelHalfWidth, y: c.mid.y }, { x: c.mid.x + labelHalfWidth, y: c.mid.y });
+  }
   return points;
+}
+
+/**
+ * Half the width a covariance value label can take with these label
+ * settings, estimated from its longest form (`-0.123 (0.045) [-0.035,
+ * 0.211]`) at 0.62 of the font size per character, since the fit has no
+ * text measuring; 0 when covariance labels are hidden.
+ */
+export function curveLabelHalfWidth(s: {
+  showCoefficients: boolean;
+  showCovarianceLabels: boolean;
+  showSE: boolean;
+  showCI: boolean;
+  decimals: number;
+  fontSize: number;
+}): number {
+  if (!s.showCoefficients || !s.showCovarianceLabels) return 0;
+  const number = s.decimals + 3; // sign, digit, point
+  let chars = number;
+  if (s.showSE) chars += number + 2;
+  if (s.showCI) chars += 2 * number + 5;
+  return (chars * 0.62 * s.fontSize) / 2;
 }

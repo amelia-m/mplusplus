@@ -51,7 +51,7 @@ export function mountGlobalPanel(host: HTMLElement, hooks: GlobalPanelHooks): vo
     return control.el;
   };
 
-  // Confidence limits: greyed out, with a note, while the open file has none.
+  // Confidence limits: grayed out, with a note, while the open file has none.
   const limitsControl = checkboxControl('95% limits', 'showCI', set);
   const limitsBox = limitsControl.el.querySelector('input')!;
   const limitsNote = document.createElement('span');
@@ -61,7 +61,7 @@ export function mountGlobalPanel(host: HTMLElement, hooks: GlobalPanelHooks): vo
   const syncLimitsAvailable = (graph: ModelGraph | null): void => {
     const available = hasConfidenceLimits(graph);
     limitsBox.disabled = !available;
-    // Inline, so no page color token is needed: the browser greys the box.
+    // Inline, so no page color token is needed: the browser grays the box.
     limitsControl.el.style.opacity = available ? '' : '0.55';
     limitsNote.hidden = available;
     limitsControl.el.title = available ? '' : NO_LIMITS_NOTE;

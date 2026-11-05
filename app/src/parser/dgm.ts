@@ -329,9 +329,12 @@ function parseModelBlock(text: string, observedOrder: string[]): ModelStmt[] {
     } else {
       // Expand `a b ON c d` (and `a1-a3 ON c`) into one statement per LHS so
       // consumers can iterate edges trivially. RHS is shared.
-      for (const l of expandTerms(s.lhs, resolve)) {
-        out.push({ raw: s.raw, op: s.op, lhs: l.name, rhs });
-      }
+      const op = s.op;
+      const lhs = expandTerms(s.lhs, resolve);
+      const perLhs = labelsAcrossLhs(rhs, lhs.length);
+      lhs.forEach((l, k) => {
+        out.push({ raw: s.raw, op, lhs: l.name, rhs: perLhs ? [{ ...rhs[0], constraint: perLhs[k] }] : rhs });
+      });
     }
   }
   return out;
@@ -364,13 +367,23 @@ function spreadLabelLists(statement: string): string {
       // Only the parameters after an operator on the same line take labels.
       const op = /(^|\s)(BY|ON|WITH)(\s|$)/i.exec(before);
       const head = op ? before.slice(0, op.index + op[0].length) : '';
-      const tokens = before.slice(head.length).trim().split(/\s+/).filter(Boolean);
+      // One parameter per entry: a modifier written apart from its name
+      // (`y2 @ 1`, `y2 * 0.8`, `y2 @1`) stays with it, so the list lands
+      // after the whole parameter and the value is not cut off.
+      const params: string[] = [];
+      for (const t of before.slice(head.length).trim().split(/\s+/).filter(Boolean)) {
+        const last = params.length - 1;
+        // A bare trailing `*` (`y1*`, free) takes a value only when one follows.
+        const joins = /^[@*]/.test(t) || (/[@*]$/.test(params[last] ?? '') && MODIFIER_VALUE_RE.test(t));
+        if (last >= 0 && joins) params[last] += ` ${t}`;
+        else params.push(t);
+      }
       // Parameters before another label on the line keep that label.
       let from = 0;
-      tokens.forEach((t, k) => {
+      params.forEach((t, k) => {
         if (t.includes('(') || t.includes(')')) from = k + 1;
       });
-      const spread = tokens.map((p, k) => (k < from || MODIFIER_VALUE_RE.test(p) ? p : `${p} ${list}`));
+      const spread = params.map((p, k) => (k < from || MODIFIER_VALUE_RE.test(p) ? p : `${p} ${list}`));
       return `${head}${spread.join(' ')}`;
     })
     .join('\n');
@@ -393,6 +406,19 @@ function assignLabelLists(terms: ModelTerm[]): ModelTerm[] {
     i = j;
   }
   return out;
+}
+
+/**
+ * A label list on the one right-hand term of a statement whose left-hand
+ * side expands to as many variables (`y1-y3 ON x (b1-b3)`) gives one label
+ * per left-hand variable, in order, as there is one parameter per variable;
+ * null when that does not apply, and the list is then kept as written.
+ */
+function labelsAcrossLhs(rhs: ModelTerm[], lhsCount: number): string[] | null {
+  if (rhs.length !== 1 || lhsCount < 2 || rhs[0].constraint === null) return null;
+  const r = splitRange(rhs[0].constraint);
+  const labels = r && generateNames(r[0], r[1]);
+  return labels && labels.length === lhsCount ? labels : null;
 }
 
 /** Split one flattened MODEL statement at its BY / ON / WITH operator. */

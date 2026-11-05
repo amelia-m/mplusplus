@@ -10,6 +10,7 @@ import {
   curveGeometry,
   overlayGeometry,
   overlayPoints,
+  curveLabelHalfWidth,
   quadraticAt,
   residualGeometry,
   RESIDUAL_LENGTH,
@@ -168,5 +169,21 @@ describe('overlayGeometry', () => {
     const tail = o.residuals.get(edge.from)!.tail;
     expect(o.curves.get(edge.id)!.d.startsWith(`M ${tail.x} ${tail.y} Q`)).toBe(true);
     expect(overlayPoints(o)).toContainEqual(o.curves.get(edge.id)!.control);
+    // Room for the curve's value label either side of its midpoint, so a long
+    // label on a curve at the diagram's edge is not cut off by the view fit.
+    const mid = o.curves.get(edge.id)!.mid;
+    expect(overlayPoints(o, 90)).toEqual(expect.arrayContaining([{ x: mid.x - 90, y: mid.y }, { x: mid.x + 90, y: mid.y }]));
+  });
+});
+
+describe('curveLabelHalfWidth', () => {
+  const s = { showCoefficients: true, showCovarianceLabels: true, showSE: true, showCI: false, decimals: 3, fontSize: 10 };
+  it('is 0 when covariance labels or all coefficients are hidden', () => {
+    expect(curveLabelHalfWidth({ ...s, showCovarianceLabels: false })).toBe(0);
+    expect(curveLabelHalfWidth({ ...s, showCoefficients: false })).toBe(0);
+  });
+  it('grows with the SE and the limits: `-0.123 (0.045) [-0.035, 0.211]` at 31 characters', () => {
+    expect(curveLabelHalfWidth({ ...s, showSE: false })).toBeCloseTo((6 * 0.62 * 10) / 2, 6);
+    expect(curveLabelHalfWidth({ ...s, showCI: true })).toBeCloseTo((31 * 0.62 * 10) / 2, 6);
   });
 });

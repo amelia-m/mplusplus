@@ -20,7 +20,8 @@ import {
   type GroupSelection,
 } from './render/svg.js';
 import { cancelNodeDrag, wireNodeDrag } from './render/drag.js';
-import { overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
+import { curveLabelHalfWidth, overlayGeometry, overlayPoints, type OverlayGeometry } from './render/residual.js';
+import { DEFAULT_EDGE_STYLE } from './render/styles.js';
 import { wireSelection } from './render/selection.js';
 import { mountToolbar } from './ui/toolbar.js';
 import { mountGlobalPanel } from './ui/globalPanel.js';
@@ -436,8 +437,22 @@ async function restore(session: SavedSession, source: 'own' | 'offered'): Promis
   }
 }
 
-/** Load a dropped, picked or demo file; true when it was loaded or attached. */
-async function handleFile(file: File): Promise<boolean> {
+/** The load in progress, which the next file waits for. */
+let loadQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Load a dropped, picked or demo file; true when it was loaded or attached.
+ * Files load one at a time, in the order they came: a `.out` dropped while a
+ * `.dgm` is still being laid out then attaches to it instead of opening on
+ * its own, and two `.dgm` files cannot finish out of order.
+ */
+function handleFile(file: File): Promise<boolean> {
+  const run = loadQueue.then(() => loadFile(file));
+  loadQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function loadFile(file: File): Promise<boolean> {
   const kind = classifyFile(file);
   try {
     if (kind === 'dgm') {
@@ -596,7 +611,8 @@ function fitViewBox(overlay?: OverlayGeometry): void {
   const points = merged?.edges.flatMap((e) => e.bend ?? []) ?? [];
   if (merged && s.graph) {
     const shapeOf = nodeShapeLookup(s.graph, s.nodeStyles);
-    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf)));
+    const labelHalf = curveLabelHalfWidth({ ...s.global, fontSize: DEFAULT_EDGE_STYLE.labelFontSize });
+    points.push(...overlayPoints(overlay ?? overlayGeometry(merged, s.graph.edges, shapeOf), labelHalf));
   }
   const content = contentViewBox(boxes, { points });
   const captions = s.graph ? modelCaptions(s.graph.source) : [];

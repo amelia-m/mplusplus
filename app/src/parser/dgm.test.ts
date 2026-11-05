@@ -170,6 +170,23 @@ describe('parseDgm - label lists', () => {
     // A parameter before another label on the line keeps that label.
     expect(byTerms('f BY y1 (a) y2 y3 (b2-b3);').map((t) => t.constraint)).toEqual(['a', 'b2', 'b3']);
   });
+  it('keeps a modifier written apart from its name on a line with a label list (`y2 @ 1`, `y2 * 0.8`), which lost the value', () => {
+    const rhs = byTerms('f BY y1 y2 @ 1 y3 * 0.8 (a1-a3);');
+    expect(rhs.map((t) => [t.name, t.fixed, t.start, t.constraint])).toEqual([
+      ['y1', null, null, 'a1'],
+      ['y2', 1, null, 'a2'],
+      ['y3', null, 0.8, 'a3'],
+    ]);
+  });
+
+  it('hands a label list out over a left-hand range (`y1-y3 ON x (b1-b3)`), which kept `b1-b3` on all three', () => {
+    const on = statementsOf('y1-y3 ON x (b1-b3);').filter((s) => s.op === 'ON');
+    expect(on.map((s) => [s.lhs, s.rhs[0].name, s.rhs[0].constraint])).toEqual([
+      ['y1', 'x', 'b1'],
+      ['y2', 'x', 'b2'],
+      ['y3', 'x', 'b3'],
+    ]);
+  });
   // A list whose length does not match the parameters is kept as written on
   // each of them (`assignLabelLists`); what Mplus does with one is not known.
 });
