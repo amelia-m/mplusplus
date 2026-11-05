@@ -2,11 +2,13 @@
  * Header toolbar: align and distribute the selected nodes, rotate or flip
  * the selection or the whole diagram and grow a selection of factors to
  * their measurement blocks (`render/arrange.ts`), undo and redo (through
- * `state/history.ts`), re-run the layout and switch the page theme.
+ * `state/history.ts`), re-run the layout, export (`render/export.ts`, when
+ * the `onExport` hook is given) and switch the page theme.
  */
 import { alignSelected, distributeSelected, type AlignMode, type DistributeMode } from '../render/align.js';
 import { arrangeSelected, selectBlocks } from '../render/arrange.js';
 import type { TransformOp } from '../layout/transform.js';
+import type { ExportKind } from '../render/export.js';
 import { redoHistory, undoHistory } from '../state/history.js';
 import { nextTheme, parseTheme, themeLabel, THEME_KEY, type ThemeChoice } from './theme.js';
 
@@ -21,6 +23,11 @@ export interface ToolbarHooks {
   onRelayout(): void;
   /** Show a short message (a toast). */
   onMessage(text: string): void;
+  /**
+   * Open the export dialog for `kind` (`ui/exportDialog.ts`). Without it the
+   * Export group is not shown.
+   */
+  onExport?(kind: ExportKind): void;
 }
 
 export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
@@ -100,8 +107,19 @@ export function mountToolbar(host: HTMLElement, hooks: ToolbarHooks): void {
       }),
     ),
     group('Layout', make('Re-run layout', 'btn', () => hooks.onRelayout())),
-    group('View', themeButton(make)),
   );
+  const onExport = hooks.onExport;
+  if (onExport) {
+    host.append(
+      group(
+        'Export',
+        titled(make('SVG', 'btn', () => onExport('svg')), 'Download the diagram as SVG, with where it came from'),
+        titled(make('PNG', 'btn', () => onExport('png')), 'Download the diagram as PNG at 2x, with where it came from'),
+        titled(make('PDF', 'btn', () => onExport('pdf')), 'Print the diagram alone; choose Save as PDF in the print dialog'),
+      ),
+    );
+  }
+  host.append(group('View', themeButton(make)));
 }
 
 /** Reads and remembers the choice; storage can be missing or refuse (private windows). */
