@@ -1,4 +1,4 @@
-# Normalise line endings to LF in the repository and the working tree,
+# Normalize line endings to LF in the repository and the working tree,
 # whatever core.autocrlf says on the machine.
 * text=auto eol=lf
 

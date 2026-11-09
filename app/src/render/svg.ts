@@ -3,7 +3,7 @@
  * groups (edges under nodes, marquee on top); `renderGraph` draws edges and
  * nodes from a `RenderState`, using effective styles (`styles.ts`) and
  * significance (`model/significance.ts`), and mints arrowhead markers per
- * colour. A node's shape element is updated in place unless its shape type
+ * color. A node's shape element is updated in place unless its shape type
  * changes.
  */
 import { select, type Selection } from 'd3-selection';

@@ -39,7 +39,7 @@ copy the lower-cased `.dgm` here.
 
 The files below were run with Mplus 8.11 and `/diagram` on 2026-10-30. Each `.dgm` holds the (adapted) input and the estimates only, not the data. The only change to the CC0 inputs is the `FILE` path, set to the local data file name.
 
-| File | Source and licence | Model | Covers |
+| File | Source and license | Model | Covers |
 |---|---|---|---|
 | `lcsmcn.dgm` | Golec de Zavala and Federico, replication data, Harvard Dataverse doi:10.7910/DVN/LW0GTR, CC0 1.0 (`lcsmcn.inp`) | Latent change score model: a change factor `chct1` measured by `rcp014@1`, regressed on the earlier score and 13 covariates, MLR | Bracketed means and bare variance statements; `@` with no value; a `WEIGHT` variable listed in USEVARIABLES; 78 undeclared covariances among the exogenous covariates, which become COVAR edges; `OUTPUT: CINT` |
 | `ms_fig2.dgm` | Mader and Schoen, "Stability of national identity content", Political Psychology (2023), doi:10.1111/pops.12888; replication data Harvard Dataverse doi:10.7910/DVN/P6XU2N, CC0 1.0 (`Mplus 01 Figure 2.inp`) | Two factors measured at four waves (8 factors, 24 categorical indicators), cross-lagged, WLSMV | Numeric equality labels on loadings (`(1)` to `(6)`); residual covariances across waves; threshold statements (`[et_anc1$1 ...]`); a predictor repeated in one ON statement (`ETH_2 on ETH_1 ETH_1`); two undeclared factor covariances (COVAR) |

@@ -322,7 +322,7 @@ dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-ove
 // and routes every file drop (dropzone, canvas, panels) through
 // `handleFile`. Which drags are taken over is `interceptsWindowDrag`: all
 // of them, except a non-file drag over a text-entry field, so dragging text
-// into an input keeps its default behaviour.
+// into an input keeps its default behavior.
 window.addEventListener('dragover', (e) => {
   const types = e.dataTransfer?.types;
   if (!interceptsWindowDrag(types, describeTarget(e.target))) return;

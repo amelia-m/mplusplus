@@ -153,7 +153,7 @@ function group(title: string, children: HTMLElement[]): HTMLDivElement {
 }
 
 /** A `<label>` holding the caption text; the caller appends the control. */
-function labelled(label: string, cls = 'global-control'): HTMLLabelElement {
+function labeled(label: string, cls = 'global-control'): HTMLLabelElement {
   const wrap = document.createElement('label');
   wrap.className = cls;
   const text = document.createElement('span');
@@ -185,7 +185,7 @@ function selectControl<K extends 'coefMode' | 'alpha' | 'pSource'>(
   options: [GlobalStyle[K], string][],
   set: Setter,
 ): Control {
-  const wrap = labelled(label);
+  const wrap = labeled(label);
   const sel = document.createElement('select');
   for (const [val, lab] of options) {
     const opt = document.createElement('option');
@@ -213,7 +213,7 @@ function numberControl(
   step: number,
   set: Setter,
 ): Control {
-  const wrap = labelled(label);
+  const wrap = labeled(label);
   const inp = document.createElement('input');
   inp.type = 'number';
   inp.min = String(spec.min);
@@ -242,7 +242,7 @@ function sliderControl(
   step: number,
   set: Setter,
 ): Control {
-  const wrap = labelled(label, 'global-control slider');
+  const wrap = labeled(label, 'global-control slider');
   const slider = document.createElement('input');
   slider.type = 'range';
   slider.min = String(spec.min);
@@ -265,7 +265,7 @@ function sliderControl(
 }
 
 function colorControl(label: string, key: 'negativeColor' | 'nsColor', set: Setter): Control {
-  const wrap = labelled(label);
+  const wrap = labeled(label);
   const inp = document.createElement('input');
   inp.type = 'color';
   inp.addEventListener('change', () => set(key, inp.value));

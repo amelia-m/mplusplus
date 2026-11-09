@@ -1,5 +1,5 @@
 /**
- * Node dragging with d3-drag. One shared drag behaviour and one drag session
+ * Node dragging with d3-drag. One shared drag behavior and one drag session
  * at a time, both held at module scope; a drag that moves nodes is one undo
  * gesture (`state/gesture.ts`).
  * The decisions (click threshold, which pointer may start, group positions)
@@ -199,25 +199,25 @@ function onEnd(event: NodeDragEvent): void {
 }
 
 /**
- * The one d3-drag behaviour, shared by every wiring. d3-drag keeps the
- * touches it is tracking in the behaviour's own `gestures` map and binds
- * `touchmove` / `touchend` on the node itself, so binding a new behaviour
+ * The one d3-drag behavior, shared by every wiring. d3-drag keeps the
+ * touches it is tracking in the behavior's own `gestures` map and binds
+ * `touchmove` / `touchend` on the node itself, so binding a new behavior
  * on each redraw would replace those listeners mid-gesture with ones that
  * know no touch: the drag would stop and its end would be lost. Rebinding
- * the same behaviour re-installs the same listeners and keeps the map.
+ * the same behavior re-installs the same listeners and keeps the map.
  * Created on first use so importing this module touches no DOM.
  */
-let behaviour: DragBehavior<SVGGElement, unknown, DragSubject> | null = null;
+let behavior: DragBehavior<SVGGElement, unknown, DragSubject> | null = null;
 
 function nodeDragBehaviour(): DragBehavior<SVGGElement, unknown, DragSubject> {
-  behaviour ??= drag<SVGGElement, unknown, DragSubject>()
+  behavior ??= drag<SVGGElement, unknown, DragSubject>()
     .subject(function () {
       return { id: this.getAttribute('data-id') ?? '' };
     })
     .on('start', onStart)
     .on('drag', onDrag)
     .on('end', onEnd);
-  return behaviour;
+  return behavior;
 }
 
 /**
@@ -242,7 +242,7 @@ function nodeDragBehaviour(): DragBehavior<SVGGElement, unknown, DragSubject> {
  * `cancelNodeDrag` (file load, Re-run layout). A second pointer while a
  * drag is active (multi-touch) is ignored (`dragStartAction`).
  *
- * Safe to call on every redraw: it rebinds one shared behaviour (see
+ * Safe to call on every redraw: it rebinds one shared behavior (see
  * `nodeDragBehaviour`), so a touch drag in progress keeps going.
  *
  * The subject carries no x/y, so d3 reports `event.x` / `event.y` as the

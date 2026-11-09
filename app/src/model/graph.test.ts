@@ -318,7 +318,7 @@ describe('buildGraph - constraint-label rows by parameter type (9x)', () => {
     },
   );
 
-  it('an unmatched code-92 row synthesizes a labelled COVAR edge', () => {
+  it('an unmatched code-92 row synthesizes a labeled COVAR edge', () => {
     const g = synthGraph('f BY y1 y2 y3;', ['92 1 y1 y3 cv']);
     const covars = g.edges.filter((e) => e.kind === 'COVAR');
     expect(covars.map((e) => e.constraint)).toEqual(['cv']);

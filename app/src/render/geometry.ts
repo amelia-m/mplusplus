@@ -13,10 +13,10 @@ export interface Box {
 }
 
 /**
- * Where the ray from the centre of `node` towards `anchor` crosses the
- * node's outline, pulled back towards the centre by `gap` along the ray.
+ * Where the ray from the center of `node` towards `anchor` crosses the
+ * node's outline, pulled back towards the center by `gap` along the ray.
  *
- * The ray is centre + t * (dx, dy); `t` is the scale at which it meets the
+ * The ray is center + t * (dx, dy); `t` is the scale at which it meets the
  * outline of the given shape, with rx, ry the half-width and half-height:
  *   - ellipse:          t = 1 / hypot(dx / rx, dy / ry)
  *   - diamond:          t = 1 / (|dx| / rx + |dy| / ry)

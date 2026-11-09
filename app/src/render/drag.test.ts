@@ -101,7 +101,7 @@ const view = Object.assign(new EventTarget(), {
 
 beforeAll(() => {
   (globalThis as { window?: unknown }).window = view;
-  // The behaviour is shared across tests, and after a touch ends d3-drag
+  // The behavior is shared across tests, and after a touch ends d3-drag
   // ignores mouse presses for 500 ms (ghost clicks); fake timers let each
   // test expire that guard.
   vi.useFakeTimers();
@@ -164,7 +164,7 @@ describe('touch drag survives the re-wire on every redraw (Q1)', () => {
   });
 });
 
-describe('mouse drag is unchanged by the shared behaviour (Q1)', () => {
+describe('mouse drag is unchanged by the shared behavior (Q1)', () => {
   it('moves with the grab offset across redraws and records one undo entry', () => {
     wireNodeDrag(group, redraw);
     mouse(node, 'mousedown', 100, 100);
@@ -270,7 +270,7 @@ describe('a throwing gesture-end listener (review 2026-10-22)', () => {
 });
 
 describe('cancelNodeDrag (F2.1)', () => {
-  it('a drag cancelled at file load writes no stale positions or undo entries afterwards (a drag survived a load)', () => {
+  it('a drag canceled at file load writes no stale positions or undo entries afterwards (a drag survived a load)', () => {
     wireNodeDrag(group, redraw);
     touch(node, 'touchstart', 5, 100, 100);
     touch(node, 'touchmove', 5, 110, 100);

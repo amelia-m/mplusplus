@@ -620,8 +620,8 @@ describe('parseDgm - list ranges (y1-y3 kept as one node name)', () => {
     expect(free[0].free).toBe(false);
     const fixed = rhsOf('f BY y1 y2-y4@1;');
     expect(fixed.slice(1).every((t) => t.fixed === 1)).toBe(true);
-    const labelled = rhsOf('f BY y1\n y2-y4 (a);');
-    expect(labelled.map((t) => t.constraint)).toEqual([null, 'a', 'a', 'a']);
+    const labeled = rhsOf('f BY y1\n y2-y4 (a);');
+    expect(labeled.map((t) => t.constraint)).toEqual([null, 'a', 'a', 'a']);
   });
 
   it('expands a standalone pin on a range (`y1-y3@1;`) into one pin per variable', () => {

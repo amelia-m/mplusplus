@@ -6,9 +6,9 @@ How we get Mplus's own diagram geometry (`.mdg`) and its own picture (PDF) for a
 
 The `.dgm` holds the model, not where Mplus draws it. Mplus's positions are only in the `.mdg` that the Diagrammer's File > Save writes (see the `.mdg` item in `TODO.md`). Parity checks need that geometry for every fixture, and Amelia ruled out both clicking through the window by automation (fragile) and saving every fixture by hand (2026-11-03: "fragile is a bigger concern than tool install. but also I'd prefer not to manually save all of them").
 
-## Licence
+## License
 
-Read on 2026-11-03 in the browser, the page text itself: the [Mplus Single-User License Agreement](https://www.statmodel.com/orderonline/pages.php?pageid=12) (8 sections), the [license information page](https://statmodel.com/orderonline/pages.php?pageid=5) and the store's Terms & Conditions. Section 1 forbids unauthorized copying of Mplus and its written materials, apart from one backup copy and normal system backups, and limits use to one computer at a time. No section mentions reverse engineering, decompiling, automation or calling the program from scripts; section 3 refers to "modified copies". Amelia, 2026-11-03, on which licence applies: the public single-user agreement "is fine". This is a reading of the text, not legal advice.
+Read on 2026-11-03 in the browser, the page text itself: the [Mplus Single-User License Agreement](https://www.statmodel.com/orderonline/pages.php?pageid=12) (8 sections), the [license information page](https://statmodel.com/orderonline/pages.php?pageid=5) and the store's Terms & Conditions. Section 1 forbids unauthorized copying of Mplus and its written materials, apart from one backup copy and normal system backups, and limits use to one computer at a time. No section mentions reverse engineering, decompiling, automation or calling the program from scripts; section 3 refers to "modified copies". Amelia, 2026-11-03, on which license applies: the public single-user agreement "is fine". This is a reading of the text, not legal advice.
 
 What follows from it here:
 
