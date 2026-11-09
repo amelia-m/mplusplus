@@ -2,7 +2,7 @@
 
 Ownership: a personal project, not work for the university. Amelia, 2026-11-03: "it's not. it's work adjacent but a pet project on my own time" (asked whether the university may have a say in the license). The license is hers to choose: LGPL-3.0-or-later (Amelia, 2026-11-03).
 
-Spelling: American English in everything committed here, code comments, docs, UI text, commit messages and pull requests (Amelia, 2026-11-03: "american english", asked "Licence" or "License"). Text written before 2026-11-03 still has British spellings ("licence", "behaviour", "colour", "organise" and so on); they are converted in one spelling-only commit once the open branches merge (open item in `TODO.md`), never mixed with content changes. Quotes keep their original spelling.
+Spelling: American English in everything committed here, code comments, docs, UI text, commit messages and pull requests (Amelia, 2026-11-03: "american english", asked "Licence" or "License"). Text written before 2026-11-03 had British spellings ("licence", "behaviour", "colour", "organise" and so on); they were converted in one spelling-only commit on 2026-11-09 (814a6df), never mixed with content changes. Quotes keep their original spelling.
 
 ## Attribution
 
