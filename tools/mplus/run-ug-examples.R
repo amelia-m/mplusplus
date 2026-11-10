@@ -173,7 +173,7 @@ named_files <- function(code, src_dir) {
 # replication list, a SWMATRIX list), or NULL when it is not such a list.
 listed_files <- function(path) {
   entry_re <- "^[A-Za-z0-9_][A-Za-z0-9_.-]*\\.[A-Za-z0-9]+$"
-  # A data file is recognised from its first line without reading it all.
+  # A data file is recognized from its first line without reading it all.
   first <- trimws(gsub('"', "", readLines(path, n = 1, warn = FALSE)))
   if (length(first) == 0 || !grepl(entry_re, first) || !grepl("[A-Za-z]", first)) return(NULL)
   lines <- trimws(gsub('"', "", readLines(path, warn = FALSE)))

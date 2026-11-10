@@ -208,7 +208,7 @@ export function overlayGeometry(
     if (b) residuals.set(r.id, residualGeometry(RESIDUAL_STYLE, b, shapeOf(r.id), r.side, gap));
   }
   const curves = new Map<string, CurveGeometry>();
-  const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  const center = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
   const byId = new Map(edges.map((e) => [e.id, e]));
   for (const l of layout.edges) {
     const e = byId.get(l.id);
@@ -220,7 +220,7 @@ export function overlayGeometry(
       curves.set(l.id, tailCurveGeometry(ra.tail, rb.tail, l.curve.side, [ba, bb], gap));
       continue;
     }
-    const rough = curveGeometry(centre(ba), centre(bb), l.curve.side).control;
+    const rough = curveGeometry(center(ba), center(bb), l.curve.side).control;
     const a = boundaryPoint(ba, shapeOf(e.from), rough, gap);
     const b = boundaryPoint(bb, shapeOf(e.to), rough, gap);
     curves.set(l.id, curveGeometry(a, b, l.curve.side));

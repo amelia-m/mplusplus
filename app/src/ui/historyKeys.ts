@@ -27,7 +27,7 @@ export type KeyTarget = TextEntryTarget;
  * focus is in a text-entry control (a text-like `input`, a `textarea`, or a
  * contenteditable), which handles its own editing keys, and for Alt
  * combinations (AltGr reports Ctrl+Alt on Windows). Non-text controls such
- * as sliders, checkboxes, colour pickers and `select` do not block undo.
+ * as sliders, checkboxes, color pickers and `select` do not block undo.
  */
 export function classifyHistoryKey(e: HistoryKeyEvent, target: KeyTarget | null): HistoryKeyAction {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return 'none';

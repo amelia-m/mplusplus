@@ -112,9 +112,9 @@ export function buildGraph(dgm: DgmFile): ModelGraph {
   // USEVARIABLES can name variables outside the model: a WEIGHT variable is
   // listed there, but Mplus leaves it out of its own variable list and draws
   // no box for it (`lcsmcn.dgm`, seen in Mplus's Diagrammer 2026-11-01).
-  const modelled = new Set(dgm.header.allVariables.map(lower));
+  const modeled = new Set(dgm.header.allVariables.map(lower));
   for (const v of dgm.useVar) {
-    if (modelled.has(lower(v))) ensureNode(v);
+    if (modeled.has(lower(v))) ensureNode(v);
   }
   for (const lat of dgm.latents) ensureNode(lat, 'latent');
   for (const obs of dgm.observed) ensureNode(obs, 'observed');

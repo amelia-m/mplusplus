@@ -67,14 +67,14 @@ describe('inspector shows the effective style (Z5)', () => {
     expect(s?.fill).toBe(DEFAULT_NODE_STYLE_LATENT.fill);
   });
 
-  it('a significant negative edge shows the negative colour and the global base width', () => {
+  it('a significant negative edge shows the negative color and the global base width', () => {
     const g = { ...DEFAULT_GLOBAL_STYLE, baseEdgeWidth: 2.5 };
     const s = edgeInspectorStyle(source({ edgeSelection: new Set(['ON:x->y']), global: g }));
     expect(s?.stroke).toBe(g.negativeColor);
     expect(s?.strokeWidth).toBe(2.5);
   });
 
-  it('a non-significant edge shows the NS colour, width and dashing', () => {
+  it('a non-significant edge shows the NS color, width and dashing', () => {
     const s = edgeInspectorStyle(source({ edgeSelection: new Set(['ON:f->y']) }));
     expect(s?.stroke).toBe(DEFAULT_GLOBAL_STYLE.nsColor);
     expect(s?.strokeWidth).toBe(DEFAULT_GLOBAL_STYLE.nsStrokeWidth);

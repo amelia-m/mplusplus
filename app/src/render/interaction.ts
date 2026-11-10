@@ -14,7 +14,7 @@ export function exceedsClickThreshold(start: Point, current: Point): boolean {
 
 /**
  * Whether a node drag should move nodes yet. A drag stays a click (no
- * movement, no undo gesture) until the pointer has travelled the click
+ * movement, no undo gesture) until the pointer has traveled the click
  * threshold from the press, in client (screen) coordinates, the same rule
  * `selection.ts` uses to tell a click from a drag. Once started it keeps
  * moving, even if the pointer comes back inside the threshold.
@@ -70,7 +70,7 @@ export interface SelectionChange {
 }
 
 /**
- * Node selection on press and on release, standard editor behaviour.
+ * Node selection on press and on release, standard editor behavior.
  *
  * `selection` is the node selection at the moment of the press, for both
  * phases, so the release can tell whether the node was already selected.

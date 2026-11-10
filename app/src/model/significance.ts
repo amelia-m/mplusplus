@@ -9,7 +9,7 @@ import type { GraphEdge } from './graph.js';
 /**
  * `auto`    : prefer .out p-value if present, fall back to t-stat.
  * `tstat`   : always use t = est/SE; ignore any provided p-value.
- * `pvalue`  : require a p-value; if none, return null (UI greys out).
+ * `pvalue`  : require a p-value; if none, return null (UI grays out).
  * `out`     : legacy alias for `pvalue` - kept for backward compatibility
  *             with earlier tests/callers.
  */

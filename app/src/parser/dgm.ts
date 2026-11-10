@@ -586,7 +586,7 @@ function parsePinStatement(s: string, resolve: RangeResolver): ModelTerm[] {
 // variable from the first to the last, by position in a list order.
 // - Observed variables: the USEVARIABLES order, or NAMES when there is no
 //   USEVARIABLES. Ch. 17 p. 730 says NAMES order is used when every NAMES
-//   variable is analysed; ch. 15 pp. 599-600 says USEVARIABLES order decides.
+//   variable is analyzed; ch. 15 pp. 599-600 says USEVARIABLES order decides.
 //   Mplus 8.11 follows USEVARIABLES in that case too (probe 2026-10-22:
 //   `USEVARIABLES = k1 k4 k2 k3 k5`, `fk BY k1-k3` loads on k1 k4 k2 k3).
 // - Continuous latents: the order of their BY statements (p. 731).
@@ -749,7 +749,7 @@ function parseEstimateSection(text: string): ParsedSection {
 
 /**
  * Where the groupings count is: its value, the index of the line after it,
- * and the level line when the layout around it was recognised.
+ * and the level line when the layout around it was recognized.
  */
 interface GroupingsCount {
   count: number;

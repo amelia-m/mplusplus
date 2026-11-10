@@ -41,7 +41,7 @@ describe('boundaryPoint (Y5)', () => {
     expect(p.x).toBeCloseTo(116, 9);
   });
 
-  it('returns the centre when the anchor is the centre', () => {
+  it('returns the center when the anchor is the center', () => {
     expect(boundaryPoint(node, 'ellipse', { x: cx, y: cy })).toEqual({ x: cx, y: cy });
   });
 });

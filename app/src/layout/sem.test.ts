@@ -12,19 +12,19 @@ const fixtures = readdirSync(DGM_DIR).filter((f) => f.endsWith('.dgm'));
 const load = (name: string): ModelGraph => buildGraph(parseDgm(readFileSync(join(DGM_DIR, name), 'utf8')));
 const W = 120;
 const H = 56;
-const centre = (n: NodeLayout) => ({ x: n.x + n.width / 2, y: n.y + n.height / 2 });
+const center = (n: NodeLayout) => ({ x: n.x + n.width / 2, y: n.y + n.height / 2 });
 
 const overlaps = (a: NodeLayout, b: NodeLayout): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-/** Directed paths drawn straight between centres that pass through a box other than their own ends. */
+/** Directed paths drawn straight between centers that pass through a box other than their own ends. */
 function pathsBehindBoxes(graph: ModelGraph, layout: LayoutResult): string[] {
   const at = new Map(layout.nodes.map((n) => [n.id, n]));
   const hits: string[] = [];
   for (const e of graph.edges) {
     if (e.kind !== 'BY' && e.kind !== 'ON') continue;
-    const p = centre(at.get(e.from)!);
-    const q = centre(at.get(e.to)!);
+    const p = center(at.get(e.from)!);
+    const q = center(at.get(e.to)!);
     for (const n of layout.nodes) {
       if (n.id !== e.from && n.id !== e.to && segmentCrossesBox(p, q, n)) hits.push(`${e.id} behind ${n.id}`);
     }
@@ -48,7 +48,7 @@ describe('placeSem - corpus', () => {
 
     it(`puts ${name}'s structural variables in Mplus's columns, left to right, in Mplus's order`, () => {
       const graph = load(name);
-      const at = new Map(placeSem(graph, W, H).nodes.map((n) => [n.id, centre(n)]));
+      const at = new Map(placeSem(graph, W, H).nodes.map((n) => [n.id, center(n)]));
       const order = graph.source.header.allVariables.map((v) => v.toLowerCase());
       const structural = graph.nodes
         .filter((n) => n.level !== null && n.level >= 0)
@@ -68,7 +68,7 @@ describe('placeSem - corpus', () => {
 
 describe('placeSem - indicator sides as Mplus draws them', () => {
   const sideOf = (g: ModelGraph, latent: string, indicator: string): string => {
-    const at = new Map(placeSem(g, W, H).nodes.map((n) => [n.id, centre(n)]));
+    const at = new Map(placeSem(g, W, H).nodes.map((n) => [n.id, center(n)]));
     const [l, i] = [at.get(latent)!, at.get(indicator)!];
     if (Math.abs(i.x - l.x) > Math.abs(i.y - l.y)) return i.x < l.x ? 'left' : 'right';
     return i.y < l.y ? 'top' : 'bottom';
@@ -104,7 +104,7 @@ describe('placeSem - residuals point to the outer edge (D18)', () => {
   it('points the residuals of indicators above a factor at the top up, and below one at the bottom down (syn_range)', () => {
     const g = load('syn_range.dgm');
     const layout = placeSem(g, W, H);
-    const at = new Map(layout.nodes.map((n) => [n.id, centre(n)]));
+    const at = new Map(layout.nodes.map((n) => [n.id, center(n)]));
     const s = new Map((layout.residuals ?? []).map((r) => [r.id, r.side]));
     // fg sits above fh in the middle column, its fan above it, fh's below.
     expect(at.get('fg')!.y).toBeLessThan(at.get('fh')!.y);

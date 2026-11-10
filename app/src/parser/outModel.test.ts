@@ -123,10 +123,10 @@ describe('outToDgm: what must survive (sample.out, syn_sem)', () => {
   });
 
   it('puts the labels la and lb on the loadings that carry them, and no others', () => {
-    const labelled = Object.fromEntries(
+    const labeled = Object.fromEntries(
       graph.edges.filter((e) => e.constraint !== null).map((e) => [e.id, e.constraint]),
     );
-    expect(labelled).toEqual({
+    expect(labeled).toEqual({
       'BY:fa->a2': 'la',
       'BY:fa->a3': 'la',
       'BY:fb->b2': 'lb',

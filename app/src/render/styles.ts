@@ -161,7 +161,7 @@ export interface SignificanceInputs {
 
 export function deriveEdgeBase(g: GlobalStyle, sig: SignificanceInputs): EdgeStyle {
   const base = { ...DEFAULT_EDGE_STYLE };
-  // NS edges: dashed, light grey, constant thin width.
+  // NS edges: dashed, light gray, constant thin width.
   if (sig.significant === false) {
     return {
       ...base,

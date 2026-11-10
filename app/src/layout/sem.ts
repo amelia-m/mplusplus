@@ -17,7 +17,7 @@ import type {
 } from './index.js';
 import { indicatorSide, outerSide, semColumns } from './semColumns.js';
 
-/** Between neighbouring indicators of one fan. */
+/** Between neighboring indicators of one fan. */
 const INDICATOR_GAP = 24;
 /** Between a latent and its fan: room for the loadings' value labels. */
 const FAN_GAP = 110;
@@ -29,11 +29,11 @@ const BLOCK_GAP = 60;
 const COLUMN_GAP = 150;
 
 interface Block {
-  /** Distance from the block's left edge to the structural node's centre. */
+  /** Distance from the block's left edge to the structural node's center. */
   left: number;
   right: number;
   height: number;
-  /** Positions relative to the structural node's centre x and the block's top. */
+  /** Positions relative to the structural node's center x and the block's top. */
   place: (cx: number, top: number) => NodeLayout[];
 }
 
@@ -94,7 +94,7 @@ export function placeSem(graph: ModelGraph, w: number, h: number): LayoutResult 
     }
   };
 
-  // Lay each column's blocks top to bottom, aligned on one centre line.
+  // Lay each column's blocks top to bottom, aligned on one center line.
   const kindOf = new Map(graph.nodes.map((n) => [n.id, n.kind]));
   const laidColumns = columns.map((ids, c) => {
     const latents = ids.filter((id) => kindOf.get(id) === 'latent');

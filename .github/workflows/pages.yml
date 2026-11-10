@@ -15,7 +15,7 @@ on:
 # which runs npm install scripts with a restored cache, can only read.
 permissions: {}
 
-# One deployment at a time; a newer push waits rather than cancelling one
+# One deployment at a time; a newer push waits rather than canceling one
 # that is half published.
 concurrency:
   group: pages

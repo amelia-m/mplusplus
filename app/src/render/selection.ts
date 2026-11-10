@@ -178,7 +178,7 @@ export function wireSelection(
     if (nodePress && event.pointerId === nodePress.pointerId) nodePress = null;
   };
 
-  // A cancelled pointer (for example a touch taken over by the browser)
+  // A canceled pointer (for example a touch taken over by the browser)
   // ends the marquee without changing the selection.
   const onPointerCancel = (event: PointerEvent) => {
     if (marqueeStart && event.pointerId === marqueePointer) endMarquee();
