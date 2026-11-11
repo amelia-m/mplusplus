@@ -7,6 +7,9 @@ app/tsconfig.tsbuildinfo
 .DS_Store
 .claude/
 _scratch/
+# Rendered talk decks: the published copy lives in app/public/talks/.
+docs/talks/**/*.html
+docs/talks/**/*_files/
 # Third-party reference material is copyrighted: keep local, track only the index.
 docs/reference/*
 !docs/reference/README.md
