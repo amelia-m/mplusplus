@@ -1,0 +1,115 @@
+---
+title: "mplusplus"
+subtitle: "Building an Mplus diagram editor with a coding agent"
+author: "Amelia Miramonti"
+format:
+  revealjs:
+    embed-resources: true
+    slide-number: true
+    theme: simple
+    wrap: preserve
+---
+
+## What it is
+
+An interactive web app that opens Mplus `.dgm` diagram files and `.out` output files and draws them as editable path diagrams.
+
+- Runs entirely in the browser: nothing leaves the browser.
+- Live: <https://amelia-m.github.io/mplusplus/>
+- Source: <https://github.com/amelia-m/mplusplus> (LGPL-3.0-or-later)
+- Independent: not affiliated with or endorsed by Muthén & Muthén.
+
+::: notes
+Demo here if time allows: open a demo example from the drop zone.
+:::
+
+## Why
+
+- Mplus's Diagrammer draws the model, but its labels collide.
+- The goal: match Mplus's diagrams as a minimum (a "parity mode", still to come), then improve on them.
+- Things it adds today: label collision avoidance, residuals on the outer edge, rotate and flip, undo, autosave, export with provenance.
+
+## What it does {.smaller}
+
+- Parses `.dgm` and `.out` files, tolerant of header drift.
+- Lays out the model following Mplus's own columns (the `.dgm`'s level line), with indicators fanned out and straight paths.
+- Drag, select, align, rotate, flip, zoom and pan.
+- Styles by significance, sign and size, with an inspector for overrides.
+- Exports SVG, PNG and PDF, each recording the source file and its hash.
+
+## Timeline {.smaller}
+
+As of 2026-11-10, counted from git.
+
+| | |
+|---|---|
+| First commit (history restarted) | 2026-10-16 |
+| Last commit on `main` | 2026-11-09 |
+| Commits on `main` | 207, of which 48 merges |
+| Pull requests merged | 18 |
+| Busiest days | 2026-11-03 (49 non-merge commits), 2026-11-04 (38) |
+| Pages deployment merged | PR #8, 2026-11-03 |
+
+::: notes
+The git history was restarted on 2026-10-16, so earlier work does not show here.
+:::
+
+## The format nobody documents {.smaller}
+
+- A `.dgm` file is Mplus syntax, a line `INPUT_END`, then a table of numbers.
+- The estimate codes are not publicly documented, so their meaning was inferred from the corpus.
+  - Last digit: parameter type (loading or regression, covariance, residual variance, variance).
+  - Tens digit: unstandardized, STDYX, STDY, STD, or a constraint label.
+- A header line gives each non-indicator variable's column: inferred from 49 files and 11 diagrams, Mplus 8.11 only.
+- Test fixtures are synthetic models simulated and fitted with Mplus, plus a few openly licensed published ones.
+
+## How it was built {.smaller}
+
+- Designed by me; implemented with Claude Code (Anthropic).
+- I make the decisions; the agent proposes, builds, tests and reviews.
+- My working rules for the agent:
+  - A task contract (scope, non-goals, acceptance) before any agent is dispatched.
+  - A local code review before every push; every merge waits for me.
+  - Every drawing and layout decision recorded with its source, who decided it and when.
+
+## Decisions have sources
+
+- `docs/diagram-conventions.md` logs every drawing and layout rule: 19 decisions.
+- Each one says its evidence level: stated, shown, observed, inferred or a choice.
+- A source counts only if its own text or figure was read, not a search summary.
+- Example: covariances are solid curves with two arrowheads (Kline; Raykov and Marcoulides; Mplus's own output).
+
+## What went sideways {.smaller}
+
+- **Autosave across tabs**: with one shared slot, four review rounds kept finding ways a tab could lose its diagram; replaced with one slot per tab.
+- **The second layout engine**: ELK was EPL-2.0 only, which does not combine with the LGPL, and was most of the bundle.
+  Dropped: the built app went from 1,530 kB to 92 kB.
+- **Undocumented formats**: every meaning inferred from files gets labeled as inferred, so it can be revisited.
+
+## By the numbers {.smaller}
+
+As of 2026-11-10.
+
+| | |
+|---|---|
+| TypeScript files in `app/src` | 85 |
+| Lines of non-test source | about 10,000 |
+| Test files | 36 |
+| Tests passing | 602 (1 skipped) |
+| `.dgm` fixtures | 13 |
+
+## What is next
+
+- Parity mode: show on any diagram that the output matches Mplus.
+- Reading Mplus's own saved diagrams (`.mdg`) for exact positions to test against.
+- More output types: categorical, Bayesian, Mplus 9, then multilevel and mixture.
+- Saving diagrams as `.dgm` and as an app file that keeps edits.
+
+## Thank you
+
+- Try it: <https://amelia-m.github.io/mplusplus/>
+- Code: <https://github.com/amelia-m/mplusplus>
+
+::: {.smaller}
+This presentation was drafted in part with Claude Code (Anthropic) from the project's git history and documentation; the author reviewed and revised it and takes responsibility for its content.
+:::
